@@ -55,37 +55,36 @@ async function extractTextFromPDF(file) {
 }
 
 // ─── NORMALISATION DU NOM DE TOURNÉE ─────────────────────────────────────────
-// Extrait et nettoie le nom après le préfixe ta830camion (insensible à la casse)
-// Gère aussi le suffixe parasite "m " dans "ta830camionm MNS75"
+// Supprime EXACTEMENT le préfixe "ta830camion" (insensible à la casse)
+// + supprime uniquement le suffixe parasite "m " (m minuscule + espace)
+//   qui apparaît dans "ta830camionm MNS75 LV1"
+// NE touche PAS aux lettres majuscules du nom (TKN, SOL, FC, AD, MNS...)
 function extractTourName(raw) {
-  // Supprimer le préfixe ta830camion (toutes variantes de casse)
-  // + éventuel caractère parasite unique après (ex: "m " dans "ta830camionm MNS75")
-  let name = raw.replace(/ta830camion(m\s+)?/i, '').trim()
-  // Normaliser les espaces multiples
-  name = name.replace(/\s+/g, ' ').trim()
-  return name
+  return raw
+    .replace(/ta830camion(m\s+)?/i, '')
+    .trim()
+    .replace(/\s+/g, ' ')
 }
 
-// ─── PARSER PRINCIPAL ─────────────────────────────────────────────────────────
+// ─── PARSER ───────────────────────────────────────────────────────────────────
 function parsePDFText(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   const tours = {}
-  // Set des noms normalisés déjà vus → évite de parser la section LIVRAISON
+  // Noms déjà vus → on ignore la 2e occurrence (section LIVRAISON)
   const seenTours = new Set()
 
   let currentTourName = null
   let inChargement = false
-  let skip = false           // true = on est dans une section LIVRAISON à ignorer
-  let waitingForNameContinuation = false // true = le nom est sur la ligne suivante
+  let skip = false // true = on est dans une section LIVRAISON à ignorer
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
 
-    // ── CAS 1 : Ligne normale "SOCIETE DE TRANSPORT ... TOURNEE TA830camionXXX" ──
-    const fullTourMatch = line.match(/TOURNEE\s+TA830(?:CAMION|camion)[a-z]?\s*(.+)/i)
+    // ── CAS 1 : Ligne standard "SOCIETE DE TRANSPORT ... TOURNEE TA830[CAMION|camion]XXX" ──
+    const fullTourMatch = line.match(/TOURNEE\s+TA830(?:CAMION|camion)(m\s+)?(.+)/i)
     if (fullTourMatch) {
-      waitingForNameContinuation = false
-      const name = extractTourName('ta830camion' + fullTourMatch[1])
+      const rawSuffix = (fullTourMatch[1] || '') + fullTourMatch[2]
+      const name = extractTourName('ta830camion' + rawSuffix)
 
       if (seenTours.has(name)) {
         skip = true; currentTourName = null; inChargement = false
@@ -97,26 +96,16 @@ function parsePDFText(text) {
       continue
     }
 
-    // ── CAS 2 : Ligne "SOCIETE DE TRANSPORT ... TOURNEE" SANS le nom (MNS1) ──
-    // Le nom est sur la ligne précédente ou suivante
-    if (line.match(/TOURNEE\s*$/) && !line.match(/ta830camion/i)) {
-      // Le nom était sur la ligne d'avant (déjà traité en CAS 3 ci-dessous)
-      // ou sera sur la ligne suivante → on attend
-      waitingForNameContinuation = false
-      continue
-    }
-
-    // ── CAS 3 : Ligne contenant "ta830camion" SANS "TOURNEE" (MNS1 split) ──
-    const splitCamionMatch = line.match(/ta830camion[a-z]?\s*(.+)/i)
+    // ── CAS 2 : "ta830camionXXX" seul (MNS1 : nom dans colonne droite sans TOURNEE) ──
+    const splitCamionMatch = line.match(/ta830camion(.+)/i)
     if (splitCamionMatch && !line.match(/TOURNEE/i)) {
       let namePart = splitCamionMatch[1].trim()
 
-      // Regarder si la ligne suivante est une continuation du nom
-      // (courte, pas un mot-clé connu, pas un barcode)
+      // Vérifier si la ligne suivante continue le nom (cas "MNS1alfortville 78 SUD ," + "BIS , ZONE 1")
       const nextLine = (lines[i + 1] || '').trim()
       const isContinuation = nextLine.length > 0
         && nextLine.length < 60
-        && !nextLine.match(/^(SOCIETE|NOM DU|POIDS|CHARGEMENT|LIVRAISON|Type|Référence|Créneau|Quantité|Imprimé|©)/i)
+        && !nextLine.match(/^(SOCIETE|NOM DU|POIDS|CHARGEMENT|LIVRAISON|Type|Référence|Créneau|Quantité|Imprimé|©|LETTRE|Emargement)/i)
         && !nextLine.match(/ta830camion/i)
         && !nextLine.match(/TOURNEE/i)
         && !nextLine.match(/^\d{9,15}$/)
@@ -143,12 +132,14 @@ function parsePDFText(text) {
 
     // ── Sections ──
     if (line === 'CHARGEMENT') { inChargement = true; continue }
+
     if (line.match(/^\s*LIVRAISON\s*$/) && inChargement) {
       inChargement = false; currentTourName = null; continue
     }
+
     if (!inChargement || line === '\f') continue
 
-    // ── Reprise : marquer le dernier colis comme exclu ──
+    // ── Reprise : marquer le dernier colis ajouté comme exclu ──
     if (line.match(/Type\s+prestation/i) && line.match(/Reprise/i)) {
       const t = tours[currentTourName]
       if (t.parcels.length > 0) {
@@ -159,8 +150,8 @@ function parsePDFText(text) {
     }
 
     // ── Ignorer les lignes de métadonnées ──
-    if (line.match(/^(Type\s+prestation|Référence|Créneau|Quantité|Imprimé|POIDS|LETTRE DE VOITURE|Réserves|commentaires|©)/i)) continue
-    if (line.match(/^\d+\s*\/\s*\d+$/)) continue             // numéro de page
+    if (line.match(/^(Type\s+prestation|Référence|Créneau|Quantité|Imprimé|POIDS|LETTRE DE VOITURE|Réserves|commentaires|©|Emargement)/i)) continue
+    if (line.match(/^\d+\s*\/\s*\d+$/)) continue               // numéro de page
     if (line.match(/^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}/)) continue // créneau horaire
 
     // ── Détection barcode : groupes de 9-15 chiffres ──
@@ -168,11 +159,11 @@ function parsePDFText(text) {
     let m
     while ((m = barcodeRegex.exec(line)) !== null) {
       const bc = m[1]
-      // Filtrer téléphones et codes postaux
-      if (bc.length === 10 && bc.startsWith('0')) continue
-      if (bc.match(/^0033/)) continue
-      if (bc.match(/^336\d|^337\d/)) continue
-      if (bc.length === 5) continue
+      // Filtrer les numéros de téléphone et codes postaux
+      if (bc.length === 10 && bc.startsWith('0')) continue  // tel FR 10 chiffres
+      if (bc.match(/^0033/)) continue                        // tel international
+      if (bc.match(/^336\d|^337\d/)) continue                // tel sans indicatif
+      if (bc.length === 5) continue                          // code postal
 
       const t = tours[currentTourName]
       const exists = t.parcels.some(p => p.barcode === bc)
@@ -243,7 +234,7 @@ export default function UploadPDF() {
       const parsedTours = parsePDFText(text)
 
       console.log('Tournées parsées:', parsedTours.map(t => ({
-        name: t.name, colis: t.parcels.length, reprises: t.excluded.length
+        name: t.name, colis: t.parcels.length, reprises: t.excluded.length,
       })))
 
       if (parsedTours.length === 0) throw new Error('Aucune tournée détectée dans ce PDF.')
@@ -264,7 +255,10 @@ export default function UploadPDF() {
           }, { onConflict: 'delivery_date_id,name' })
           .select().single()
 
-        if (tourError) { console.warn(`Tournée ${tour.name} ignorée:`, tourError.message); continue }
+        if (tourError) {
+          console.warn(`Tournée ${tour.name} ignorée :`, tourError.message)
+          continue
+        }
 
         if (tour.parcels.length > 0) {
           await supabase.from('parcels').upsert(
@@ -277,8 +271,10 @@ export default function UploadPDF() {
         if (tour.excluded.length > 0) {
           await supabase.from('parcels').upsert(
             tour.excluded.map(p => ({
-              tour_id: tourData.id, barcode: p.barcode,
-              excluded: true, exclusion_reason: p.exclusionReason || 'Reprise',
+              tour_id: tourData.id,
+              barcode: p.barcode,
+              excluded: true,
+              exclusion_reason: p.exclusionReason || 'Reprise',
             })),
             { onConflict: 'barcode', ignoreDuplicates: true }
           )
@@ -288,7 +284,9 @@ export default function UploadPDF() {
 
       if (uploadRecord) {
         await supabase.from('pdf_uploads').update({
-          status: 'done', tours_created: totalTours, parcels_created: totalParcels,
+          status: 'done',
+          tours_created: totalTours,
+          parcels_created: totalParcels,
         }).eq('id', uploadRecord.id)
       }
 
@@ -382,7 +380,9 @@ export default function UploadPDF() {
                 border: `1px solid ${result.success ? '#a7f3d0' : '#fca5a5'}`,
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: result.success ? '8px' : 0 }}>
-                  {result.success ? <CheckCircle size={18} color="#059669" /> : <AlertCircle size={18} color="#dc2626" />}
+                  {result.success
+                    ? <CheckCircle size={18} color="#059669" />
+                    : <AlertCircle size={18} color="#dc2626" />}
                   <span style={{ fontWeight: 600, color: result.success ? '#065f46' : '#991b1b', fontSize: '14px' }}>
                     {result.success ? 'Import réussi !' : 'Erreur lors de l\'import'}
                   </span>
@@ -410,7 +410,9 @@ export default function UploadPDF() {
               disabled={loading || !file}
               style={{ alignSelf: 'flex-start' }}
             >
-              {loading ? <><div className="spinner" /> Traitement...</> : <><Upload size={15} /> Importer et analyser</>}
+              {loading
+                ? <><div className="spinner" /> Traitement...</>
+                : <><Upload size={15} /> Importer et analyser</>}
             </button>
           </div>
         </div>
