@@ -38,7 +38,6 @@ export default function ScanPage() {
   const [allParcels, setAllParcels] = useState([])
   const [scannedBarcodes, setScannedBarcodes] = useState(new Set())
   const [scannedList, setScannedList] = useState([])
-  // Anomalies = uniquement wrong_tour (colis connu mais mauvaise tournée)
   const [wrongTourList, setWrongTourList] = useState([])
 
   const scanInputRef = useRef(null)
@@ -74,16 +73,13 @@ export default function ScanPage() {
     }
   }, [manualMode])
 
-  // Chargement initial — reconstruit tout l'état depuis la base
   useEffect(() => {
     async function init() {
-      // 1. Tournée
       const { data: tourData } = await supabase
         .from('tours').select('*').eq('id', tourId).single()
       setTour(tourData)
       if (tourData) setTotalParcels(tourData.total_parcels || 0)
 
-      // 2. Tous les colis de la tournée (hors Reprise)
       const { data: parcels } = await supabase
         .from('parcels')
         .select('barcode')
@@ -92,10 +88,9 @@ export default function ScanPage() {
         .order('barcode')
       if (parcels) setAllParcels(parcels)
 
-      // 3. Historique complet des scans
       const { data: existingScans } = await supabase
         .from('scan_events')
-        .select('barcode_scanned, result_type, scanned_at, parcels(barcode), tours(name)')
+        .select('barcode_scanned, result_type, scanned_at')
         .eq('tour_id', tourId)
         .order('scanned_at', { ascending: false })
 
@@ -114,13 +109,7 @@ export default function ScanPage() {
               }
             }
           } else if (scan.result_type === 'wrong_tour') {
-            // Anomalie : colis connu mais sur la mauvaise tournée
-            wrongList.push({
-              barcode: scan.barcode_scanned,
-              scanned_at: scan.scanned_at,
-              // Nom de la vraie tournée si disponible
-              real_tour: scan.parcels && scan.parcels.barcode ? scan.barcode_scanned : null,
-            })
+            wrongList.push({ barcode: scan.barcode_scanned, scanned_at: scan.scanned_at })
           }
         }
 
@@ -141,7 +130,8 @@ export default function ScanPage() {
     const id = tourIdRef.current
 
     try {
-      const { data: parcel } = await supabase
+      // Chercher le colis
+      const { data: parcel, error: parcelError } = await supabase
         .from('parcels')
         .select('id, tour_id, excluded, barcode, tours(name)')
         .eq('barcode', bc)
@@ -153,28 +143,44 @@ export default function ScanPage() {
       if (!parcel) {
         resultType = 'unknown'
       } else if (parcel.excluded) {
-        resultType = 'unknown'; parcelId = parcel.id
+        resultType = 'unknown'
+        parcelId = parcel.id
       } else if (parcel.tour_id !== id) {
         resultType = 'wrong_tour'
         parcelId = parcel.id
         realTourName = parcel.tours ? parcel.tours.name : null
       } else {
-        if (scannedBarcodes.has(bc)) {
-          resultType = 'already_scanned'
-        } else {
-          resultType = 'ok'
-        }
+        resultType = scannedBarcodes.has(bc) ? 'already_scanned' : 'ok'
         parcelId = parcel.id
       }
 
-      await supabase.from('scan_events').insert({
+      // Log pour debug
+      const insertData = {
         tour_id: id,
         parcel_id: parcelId,
-        user_id: profile.id,
+        user_id: profile ? profile.id : null,
         barcode_scanned: bc,
         result_type: resultType,
-      })
+      }
+      console.log('INSERT DATA:', insertData)
 
+      if (!profile || !profile.id) {
+        console.error('ERREUR: profile ou profile.id est null', profile)
+        return
+      }
+
+      const { error: insertError } = await supabase
+        .from('scan_events')
+        .insert(insertData)
+
+      if (insertError) {
+        console.error('INSERT ERROR:', insertError)
+        return
+      }
+
+      console.log('INSERT OK')
+
+      // Mettre à jour l'état local
       if (resultType === 'ok') {
         setScannedBarcodes(prev => new Set([...prev, bc]))
         setScannedList(prev => [{ barcode: bc, scanned_at: new Date().toISOString() }, ...prev])
@@ -191,7 +197,7 @@ export default function ScanPage() {
       popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION)
 
     } catch (err) {
-      console.error('processScan error:', err)
+      console.error('processScan EXCEPTION:', err)
     }
   }, [scannedBarcodes, profile])
 
@@ -241,7 +247,6 @@ export default function ScanPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
 
-      {/* Input invisible TC51 */}
       <input
         ref={scanInputRef}
         style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 1, height: 1 }}
@@ -252,7 +257,6 @@ export default function ScanPage() {
         inputMode="none" tabIndex={-1} aria-hidden="true"
       />
 
-      {/* Popup */}
       {popup && (
         <div className={'scan-overlay ' + SCAN_RESULTS[popup.type].cls}>
           <div style={{ fontSize: 24, flexShrink: 0 }}>{SCAN_RESULTS[popup.type].icon}</div>
@@ -260,7 +264,7 @@ export default function ScanPage() {
             <div className="scan-overlay-title">{SCAN_RESULTS[popup.type].label}</div>
             <div className="scan-overlay-sub">
               {popup.type === 'wrong_tour' && popup.tourName
-                ? `Appartient à la tournée : ${popup.tourName}`
+                ? 'Appartient à : ' + popup.tourName
                 : SCAN_RESULTS[popup.type].sub}
               <span style={{ display: 'block', opacity: 0.7, fontSize: 11, marginTop: 2, fontFamily: 'monospace' }}>{popup.barcode}</span>
             </div>
@@ -269,23 +273,12 @@ export default function ScanPage() {
       )}
 
       {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '10px 14px',
-        background: 'var(--white)',
-        borderBottom: '1px solid var(--gray-100)',
-        flexShrink: 0,
-      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'var(--white)', borderBottom: '1px solid var(--gray-100)', flexShrink: 0 }}>
         <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px' }} onClick={() => navigate('/operator')}>
           <ArrowLeft size={16} />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontFamily: 'var(--font-display)', fontWeight: 800,
-            fontSize: 'clamp(13px, 3.5vw, 18px)',
-            color: 'var(--gray-800)',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(13px, 3.5vw, 18px)', color: 'var(--gray-800)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {tour && tour.name}
           </div>
         </div>
@@ -305,12 +298,7 @@ export default function ScanPage() {
 
       {/* Compteurs */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, padding: '10px 14px 0', flexShrink: 0 }}>
-
-        <div style={{
-          background: 'var(--white)', borderRadius: 'var(--radius)',
-          border: '1px solid var(--gray-200)', borderTop: '3px solid var(--accent)',
-          padding: '10px 8px', textAlign: 'center', boxShadow: 'var(--shadow-sm)',
-        }}>
+        <div style={{ background: 'var(--white)', borderRadius: 'var(--radius)', border: '1px solid var(--gray-200)', borderTop: '3px solid var(--accent)', padding: '10px 8px', textAlign: 'center', boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(20px, 5.5vw, 34px)', lineHeight: 1, color: 'var(--gray-800)' }}>
             {scanned}<span style={{ fontSize: 'clamp(10px, 2.5vw, 14px)', color: 'var(--gray-300)', fontWeight: 400 }}>/{totalParcels}</span>
           </div>
@@ -320,97 +308,40 @@ export default function ScanPage() {
           </div>
         </div>
 
-        <div
-          onClick={() => missing > 0 && setActiveTab('missing')}
-          style={{
-            background: 'var(--white)', borderRadius: 'var(--radius)',
-            border: '1px solid var(--gray-200)', borderTop: '3px solid ' + (missing > 0 ? 'var(--red)' : 'var(--green)'),
-            padding: '10px 8px', textAlign: 'center', boxShadow: 'var(--shadow-sm)',
-            cursor: missing > 0 ? 'pointer' : 'default',
-          }}
-        >
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(20px, 5.5vw, 34px)', lineHeight: 1, color: missing > 0 ? 'var(--red)' : 'var(--green)' }}>
-            {missing}
-          </div>
+        <div onClick={() => missing > 0 && setActiveTab('missing')} style={{ background: 'var(--white)', borderRadius: 'var(--radius)', border: '1px solid var(--gray-200)', borderTop: '3px solid ' + (missing > 0 ? 'var(--red)' : 'var(--green)'), padding: '10px 8px', textAlign: 'center', boxShadow: 'var(--shadow-sm)', cursor: missing > 0 ? 'pointer' : 'default' }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(20px, 5.5vw, 34px)', lineHeight: 1, color: missing > 0 ? 'var(--red)' : 'var(--green)' }}>{missing}</div>
           <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 3 }}>Manquants</div>
-          {missing === 0 && scanned > 0 && <CheckCircle size={12} color="var(--green)" style={{ marginTop: 3 }} />}
+          {missing === 0 && scanned > 0 && <CheckCircle size={12} color="var(--green)" />}
         </div>
 
-        <div
-          onClick={() => anomalies > 0 && setActiveTab('anomalies')}
-          style={{
-            background: 'var(--white)', borderRadius: 'var(--radius)',
-            border: '1px solid var(--gray-200)', borderTop: '3px solid ' + (anomalies > 0 ? 'var(--red)' : 'var(--gray-200)'),
-            padding: '10px 8px', textAlign: 'center', boxShadow: 'var(--shadow-sm)',
-            cursor: anomalies > 0 ? 'pointer' : 'default',
-          }}
-        >
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(20px, 5.5vw, 34px)', lineHeight: 1, color: anomalies > 0 ? 'var(--red)' : 'var(--gray-300)' }}>
-            {anomalies}
-          </div>
+        <div onClick={() => anomalies > 0 && setActiveTab('anomalies')} style={{ background: 'var(--white)', borderRadius: 'var(--radius)', border: '1px solid var(--gray-200)', borderTop: '3px solid ' + (anomalies > 0 ? 'var(--red)' : 'var(--gray-200)'), padding: '10px 8px', textAlign: 'center', boxShadow: 'var(--shadow-sm)', cursor: anomalies > 0 ? 'pointer' : 'default' }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(20px, 5.5vw, 34px)', lineHeight: 1, color: anomalies > 0 ? 'var(--red)' : 'var(--gray-300)' }}>{anomalies}</div>
           <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 3 }}>Anomalies</div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{
-        display: 'flex', gap: 0,
-        padding: '10px 14px 0',
-        borderBottom: '1px solid var(--gray-200)',
-        flexShrink: 0,
-      }}>
+      <div style={{ display: 'flex', padding: '10px 14px 0', borderBottom: '1px solid var(--gray-200)', flexShrink: 0 }}>
         {TABS.map(tab => {
           const isActive = activeTab === tab.id
           const hasBadge = tab.id === 'anomalies' && anomalies > 0
           return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                flex: 1,
-                padding: '8px 4px',
-                border: 'none',
-                borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
-                background: 'none',
-                fontSize: 12,
-                fontWeight: isActive ? 600 : 400,
-                color: isActive ? 'var(--accent)' : 'var(--gray-400)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 4,
-                transition: 'all 0.15s',
-                fontFamily: 'var(--font-body)',
-              }}
-            >
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ flex: 1, padding: '8px 4px', border: 'none', borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent', background: 'none', fontSize: 12, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--accent)' : 'var(--gray-400)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: 'var(--font-body)' }}>
               {tab.label}
-              {hasBadge && (
-                <span style={{
-                  background: 'var(--red)', color: 'white',
-                  borderRadius: '100px', fontSize: 9, fontWeight: 700,
-                  padding: '1px 5px', lineHeight: 1.5,
-                }}>
-                  {anomalies}
-                </span>
-              )}
+              {hasBadge && <span style={{ background: 'var(--red)', color: 'white', borderRadius: 100, fontSize: 9, fontWeight: 700, padding: '1px 5px' }}>{anomalies}</span>}
             </button>
           )
         })}
       </div>
 
-      {/* Contenu des tabs */}
+      {/* Contenu */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
 
         {/* TAB SCAN */}
         {activeTab === 'scan' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {manualMode ? (
-              <div style={{
-                background: 'var(--white)', borderRadius: 'var(--radius)',
-                border: '2px solid var(--accent)', padding: '14px',
-                display: 'flex', flexDirection: 'column', gap: 10,
-              }}>
+              <div style={{ background: 'var(--white)', borderRadius: 'var(--radius)', border: '2px solid var(--accent)', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Keyboard size={13} /> Saisie manuelle
                 </div>
@@ -424,50 +355,28 @@ export default function ScanPage() {
                     if (e.key === 'Escape') { setManualMode(false); setManualInput('') }
                   }}
                   placeholder="Numéro de colis"
-                  inputMode="numeric" pattern="[0-9]*"
-                  autoComplete="off"
+                  inputMode="numeric" pattern="[0-9]*" autoComplete="off"
                   style={{ fontSize: 18, fontFamily: 'monospace', letterSpacing: 1, textAlign: 'center' }}
                 />
-                <button
-                  className="btn btn-primary w-full"
-                  onClick={handleManualSubmit}
-                  disabled={manualInput.trim().length < 5}
-                  style={{ justifyContent: 'center' }}
-                >
+                <button className="btn btn-primary w-full" onClick={handleManualSubmit} disabled={manualInput.trim().length < 5} style={{ justifyContent: 'center' }}>
                   Valider
                 </button>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => { setManualMode(false); setManualInput('') }}
-                  style={{ alignSelf: 'center', color: 'var(--gray-400)', fontSize: 12 }}
-                >
+                <button className="btn btn-ghost btn-sm" onClick={() => { setManualMode(false); setManualInput('') }} style={{ alignSelf: 'center', color: 'var(--gray-400)', fontSize: 12 }}>
                   ← Retour au scan TC51
                 </button>
               </div>
             ) : (
               <div
-                style={{
-                  background: 'var(--white)', borderRadius: 'var(--radius)',
-                  border: '2px dashed ' + (popup ? SCAN_RESULTS[popup.type].color : 'var(--gray-200)'),
-                  padding: '24px 16px', textAlign: 'center', cursor: 'text',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  justifyContent: 'center', gap: 6, minHeight: 100,
-                  transition: 'border-color 0.2s',
-                }}
+                style={{ background: 'var(--white)', borderRadius: 'var(--radius)', border: '2px dashed ' + (popup ? SCAN_RESULTS[popup.type].color : 'var(--gray-200)'), padding: '24px 16px', textAlign: 'center', cursor: 'text', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 100, transition: 'border-color 0.2s' }}
                 onClick={() => scanInputRef.current && scanInputRef.current.focus()}
               >
                 <Package size={24} color="var(--gray-200)" />
                 <p style={{ fontSize: 13, color: 'var(--gray-400)', fontWeight: 500, margin: 0 }}>Zone de scan active</p>
                 <p style={{ fontSize: 11, color: 'var(--gray-300)', margin: 0 }}>Scannez avec le TC51</p>
-                {scanInput && (
-                  <div style={{ fontFamily: 'monospace', fontSize: 18, color: 'var(--accent)', fontWeight: 600, letterSpacing: 2 }}>
-                    {scanInput}
-                  </div>
-                )}
+                {scanInput && <div style={{ fontFamily: 'monospace', fontSize: 18, color: 'var(--accent)', fontWeight: 600, letterSpacing: 2 }}>{scanInput}</div>}
               </div>
             )}
 
-            {/* Derniers scans sur l'onglet scan */}
             {scannedList.length > 0 && (
               <div className="card" style={{ overflow: 'hidden' }}>
                 <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between' }}>
@@ -493,15 +402,16 @@ export default function ScanPage() {
               <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>Colis confirmés</span>
               <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>{scannedList.length} / {totalParcels}</span>
             </div>
-            {scannedList.length === 0 ? (
-              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>Aucun colis scanné</div>
-            ) : scannedList.map((s, idx) => (
-              <div key={s.barcode + idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--gray-100)' }}>
-                <span style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, background: '#05996920', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>✓</span>
-                <code style={{ fontSize: 12, color: 'var(--gray-600)', flex: 1 }}>{s.barcode}</code>
-                <span style={{ fontSize: 10, color: 'var(--gray-400)', flexShrink: 0 }}>{new Date(s.scanned_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-              </div>
-            ))}
+            {scannedList.length === 0
+              ? <div style={{ padding: '24px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>Aucun colis scanné</div>
+              : scannedList.map((s, idx) => (
+                <div key={s.barcode + idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--gray-100)' }}>
+                  <span style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, background: '#05996920', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>✓</span>
+                  <code style={{ fontSize: 12, color: 'var(--gray-600)', flex: 1 }}>{s.barcode}</code>
+                  <span style={{ fontSize: 10, color: 'var(--gray-400)', flexShrink: 0 }}>{new Date(s.scanned_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                </div>
+              ))
+            }
           </div>
         )}
 
@@ -509,55 +419,46 @@ export default function ScanPage() {
         {activeTab === 'missing' && (
           <div className="card" style={{ overflow: 'hidden' }}>
             <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', background: missing > 0 ? 'var(--red-light)' : 'var(--green-light)' }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 600, color: missing > 0 ? '#991b1b' : '#065f46' }}>
-                Colis manquants
-              </span>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 600, color: missing > 0 ? '#991b1b' : '#065f46' }}>Colis manquants</span>
               <span style={{ fontSize: 11, color: missing > 0 ? '#991b1b' : '#065f46', fontWeight: 500 }}>{missing}</span>
             </div>
-            {missingParcels.length === 0 ? (
-              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--green)', fontSize: 13, fontWeight: 500 }}>
-                <CheckCircle size={20} style={{ marginBottom: 6 }} />
-                <div>Tous les colis sont scannés ✓</div>
-              </div>
-            ) : missingParcels.map(p => (
-              <div key={p.barcode} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--gray-100)' }}>
-                <span style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, background: 'var(--red-light)', color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>✗</span>
-                <code style={{ fontSize: 12, color: 'var(--gray-600)', flex: 1 }}>{p.barcode}</code>
-              </div>
-            ))}
+            {missingParcels.length === 0
+              ? <div style={{ padding: '24px', textAlign: 'center', color: 'var(--green)', fontSize: 13, fontWeight: 500 }}>Tous les colis sont scannés ✓</div>
+              : missingParcels.map(p => (
+                <div key={p.barcode} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--gray-100)' }}>
+                  <span style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, background: 'var(--red-light)', color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>✗</span>
+                  <code style={{ fontSize: 12, color: 'var(--gray-600)', flex: 1 }}>{p.barcode}</code>
+                </div>
+              ))
+            }
           </div>
         )}
 
-        {/* TAB ANOMALIES — uniquement les wrong_tour */}
+        {/* TAB ANOMALIES */}
         {activeTab === 'anomalies' && (
           <div className="card" style={{ overflow: 'hidden' }}>
             <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: anomalies > 0 ? 'var(--red-light)' : undefined }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <AlertTriangle size={13} color={anomalies > 0 ? 'var(--red)' : 'var(--gray-400)'} />
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 600, color: anomalies > 0 ? '#991b1b' : 'var(--gray-700)' }}>
-                  Colis sur mauvaise tournée
-                </span>
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 600, color: anomalies > 0 ? '#991b1b' : 'var(--gray-700)' }}>Colis sur mauvaise tournée</span>
               </div>
               <span style={{ fontSize: 11, color: anomalies > 0 ? '#991b1b' : 'var(--gray-400)', fontWeight: 500 }}>{anomalies}</span>
             </div>
-            {wrongTourList.length === 0 ? (
-              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>
-                Aucune anomalie détectée
-              </div>
-            ) : wrongTourList.map((s, idx) => (
-              <div key={s.barcode + idx} style={{ padding: '10px 12px', borderBottom: '1px solid var(--gray-100)', background: '#fff5f5' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, background: 'var(--red-light)', color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>⚠</span>
-                  <code style={{ fontSize: 12, color: 'var(--gray-800)', flex: 1, fontWeight: 600 }}>{s.barcode}</code>
-                  <span style={{ fontSize: 10, color: 'var(--gray-400)', flexShrink: 0 }}>{new Date(s.scanned_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                </div>
-                {s.real_tour && (
-                  <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4, marginLeft: 28 }}>
-                    Appartient à : {s.real_tour}
+            {wrongTourList.length === 0
+              ? <div style={{ padding: '24px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>Aucune anomalie détectée</div>
+              : wrongTourList.map((s, idx) => (
+                <div key={s.barcode + idx} style={{ padding: '10px 12px', borderBottom: '1px solid var(--gray-100)', background: '#fff5f5' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, background: 'var(--red-light)', color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>⚠</span>
+                    <code style={{ fontSize: 12, color: 'var(--gray-800)', flex: 1, fontWeight: 600 }}>{s.barcode}</code>
+                    <span style={{ fontSize: 10, color: 'var(--gray-400)', flexShrink: 0 }}>{new Date(s.scanned_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                   </div>
-                )}
-              </div>
-            ))}
+                  {s.real_tour && (
+                    <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4, marginLeft: 28 }}>Appartient à : {s.real_tour}</div>
+                  )}
+                </div>
+              ))
+            }
           </div>
         )}
       </div>
