@@ -36,9 +36,14 @@ async function extractTextFromPDF(file) {
     const content = await page.getTextContent()
 
     // Regrouper les items par position Y (même Y = même ligne visuelle)
+    // Grouper les items par Y avec une tolérance de 3px
+    // pour gérer les barcodes dont le Y est légèrement décalé
     const byY = {}
     for (const item of content.items) {
-      const y = Math.round(item.transform[5])
+      const rawY = item.transform[5]
+      // Chercher un groupe Y existant dans un rayon de 3px
+      const yKey = Object.keys(byY).find(k => Math.abs(k - rawY) <= 3)
+      const y = yKey !== undefined ? yKey : Math.round(rawY)
       if (!byY[y]) byY[y] = []
       byY[y].push({ x: item.transform[4], str: item.str })
     }
@@ -154,16 +159,22 @@ function parsePDFText(text) {
     if (line.match(/^\d+\s*\/\s*\d+$/)) continue               // numéro de page
     if (line.match(/^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}/)) continue // créneau horaire
 
-    // ── Détection barcode : groupes de 9-15 chiffres ──
-    const barcodeRegex = /\b(\d{9,15})\b/g
+    // ── Détection barcode ──
+    // Le barcode est TOUJOURS sur la ligne qui contient LV1_, LV2_ ou LV3_
+    // et c'est LE DERNIER groupe de 12-15 chiffres sur cette ligne
+    if (!line.match(/LV[123]_/)) continue
+
+    // Prendre uniquement le dernier nombre de 12-15 chiffres en fin de ligne
+    const lastBarcodeMatch = line.match(/(\d{12,15})\s*$/)
+    if (!lastBarcodeMatch) continue
+
+    const barcodeRegex = /\b(\d{12,15})\b/g
     let m
     while ((m = barcodeRegex.exec(line)) !== null) {
       const bc = m[1]
-      // Filtrer les numéros de téléphone et codes postaux
-      if (bc.length === 10 && bc.startsWith('0')) continue  // tel FR 10 chiffres
-      if (bc.match(/^0033/)) continue                        // tel international
-      if (bc.match(/^336\d|^337\d/)) continue                // tel sans indicatif
-      if (bc.length === 5) continue                          // code postal
+      // Filtrer les numéros de téléphone
+      if (bc.match(/^0033/)) continue   // tel international 0033
+      if (bc.match(/^33[67]/)) continue // tel +33 (ex: 330658421692)
 
       const t = tours[currentTourName]
       const exists = t.parcels.some(p => p.barcode === bc)
@@ -205,7 +216,7 @@ export default function UploadPDF() {
 
     try {
       setProgress('Envoi du fichier...')
-      const path = `${deliveryDate}/${Date.now()}_${file.name}`
+      const safeName = file.name.normalize('NFD').replace(/[0300-036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_'); const path = `${deliveryDate}/${Date.now()}_${safeName}`
       const { error: uploadError } = await supabase.storage
         .from('tour-pdfs').upload(path, file)
       if (uploadError) throw new Error('Erreur upload : ' + uploadError.message)
