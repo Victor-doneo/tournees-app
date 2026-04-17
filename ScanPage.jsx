@@ -15,6 +15,7 @@ const SCAN_RESULTS = {
 
 const TABS = [
   { id: 'scan', label: 'Scan' },
+  { id: 'colis', label: 'Colis' },
   { id: 'scanned', label: 'Scannés' },
   { id: 'missing', label: 'Manquants' },
   { id: 'anomalies', label: 'Anomalies' },
@@ -392,6 +393,39 @@ export default function ScanPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB COLIS — tous les colis de la tournée avec statut */}
+        {activeTab === 'colis' && (
+          <div className="card" style={{ overflow: 'hidden' }}>
+            <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>Tous les colis</span>
+              <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>{allParcels.length} colis</span>
+            </div>
+            {allParcels.length === 0
+              ? <div style={{ padding: '24px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>Aucun colis</div>
+              : allParcels.map(p => {
+                const isScanned = scannedBarcodes.has(p.barcode)
+                return (
+                  <div key={p.barcode} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--gray-100)', background: isScanned ? '#f0fdf4' : undefined }}>
+                    <span style={{
+                      width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
+                      background: isScanned ? '#05996920' : 'var(--red-light)',
+                      color: isScanned ? '#059669' : 'var(--red)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 10, fontWeight: 700,
+                    }}>
+                      {isScanned ? '✓' : '✗'}
+                    </span>
+                    <code style={{ fontSize: 12, color: 'var(--gray-600)', flex: 1 }}>{p.barcode}</code>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: isScanned ? '#059669' : 'var(--gray-300)', flexShrink: 0 }}>
+                      {isScanned ? 'Scanné' : 'En attente'}
+                    </span>
+                  </div>
+                )
+              })
+            }
           </div>
         )}
 
