@@ -161,21 +161,21 @@ function parsePDFText(text) {
 
     // ── Détection barcode ──
     // Le barcode est TOUJOURS sur la ligne qui contient LV1_, LV2_ ou LV3_
-    // et c'est LE DERNIER groupe de 12-15 chiffres sur cette ligne
+    // et c'est LE DERNIER nombre en fin de ligne (9-15 chiffres)
     if (!line.match(/LV[123]_/)) continue
 
-    // Prendre uniquement le dernier nombre de 12-15 chiffres en fin de ligne
-    const lastBarcodeMatch = line.match(/(\d{12,15})\s*$/)
+    // Prendre UNIQUEMENT le dernier nombre en fin de ligne = le barcode
+    const lastBarcodeMatch = line.match(/(\d{9,15})\s*$/)
     if (!lastBarcodeMatch) continue
 
-    const barcodeRegex = /\b(\d{12,15})\b/g
-    let m
-    while ((m = barcodeRegex.exec(line)) !== null) {
-      const bc = m[1]
-      // Filtrer les numéros de téléphone
-      if (bc.match(/^0033/)) continue   // tel international 0033
-      if (bc.match(/^33[67]/)) continue // tel +33 (ex: 330658421692)
+    const bc = lastBarcodeMatch[1]
+    // Filtrer les numéros de téléphone
+    if (bc.length === 10 && bc.startsWith('0')) continue  // tel FR 10 chiffres
+    if (bc.match(/^0033/)) continue                       // tel international
+    if (bc.match(/^33[67]/)) continue                     // tel +33 collé
 
+    {
+    const m = [null, bc]
       const t = tours[currentTourName]
       const exists = t.parcels.some(p => p.barcode === bc)
         || t.excluded.some(p => p.barcode === bc)
