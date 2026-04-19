@@ -102,7 +102,7 @@ export default function LoginPage() {
 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', marginBottom: '48px' }}>
             <h2 style={{
-              fontFamily: 'var(--font-display)', fontSize: '28px',
+              fontFamily: 'var(--font-display)', fontSize: '22px',
               fontWeight: 800, color: 'white', lineHeight: 1.2, marginBottom: '12px'
             }}>
               Gérez vos <span style={{ color: 'var(--accent)' }}>tournées</span> efficacement.
