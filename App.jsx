@@ -9,6 +9,7 @@ import Users from './Users'
 import SearchParcel from './SearchParcel'
 import SearchTours from './SearchTours'
 import UploadPDF from './UploadPDF'
+import Reprises from './Reprises'
 import OperatorHome from './OperatorHome'
 import ScanPage from './ScanPage'
 
@@ -46,6 +47,7 @@ export default function App() {
         <Route path="users" element={<Users />} />
         <Route path="search-parcel" element={<SearchParcel />} />
         <Route path="search-tours" element={<SearchTours />} />
+        <Route path="reprises" element={<Reprises />} />
         <Route path="scan/:tourId" element={<ScanPage />} />
       </Route>
 
