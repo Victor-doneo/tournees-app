@@ -275,7 +275,7 @@ export default function ScanPage() {
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'var(--white)', borderBottom: '1px solid var(--gray-100)', flexShrink: 0 }}>
-        <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px' }} onClick={() => navigate('/operator')}>
+        <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px' }} onClick={() => navigate(profile?.role === 'admin' ? '/admin/tours' : '/operator')}>
           <ArrowLeft size={16} />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
