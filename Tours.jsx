@@ -11,7 +11,7 @@ export default function Tours() {
   const [showArchived, setShowArchived] = useState(false)
   const [filter, setFilter] = useState('')
   const [expanded, setExpanded] = useState(null)
-  const [detail, setDetail] = useState({}) // { tourId: { parcels, scanned, missing, anomalies } }
+  const [detail, setDetail] = useState({})
   const [detailLoading, setDetailLoading] = useState(false)
 
   useEffect(() => { fetchTours() }, [showArchived])
@@ -35,14 +35,12 @@ export default function Tours() {
 
     setDetailLoading(true)
     try {
-      // Tous les colis de la tournée
       const { data: parcels } = await supabase
         .from('parcels')
         .select('barcode, excluded, exclusion_reason')
         .eq('tour_id', tour.tour_id)
         .order('barcode')
 
-      // Tous les scans de la tournée
       const { data: scans } = await supabase
         .from('scan_events')
         .select('barcode_scanned, result_type, scanned_at, users(full_name)')
@@ -60,21 +58,15 @@ export default function Tours() {
 
       setDetail(d => ({
         ...d,
-        [tour.tour_id]: {
-          activeParcels,
-          scannedBarcodes,
-          missingParcels,
-          anomalies,
-          excluded,
-          scans: scans || [],
-        }
+        [tour.tour_id]: { activeParcels, scannedBarcodes, missingParcels, anomalies, excluded }
       }))
     } finally {
       setDetailLoading(false)
     }
   }
 
-  async function toggleArchive(tour) {
+  async function toggleArchive(e, tour) {
+    e.stopPropagation()
     const { error } = await supabase
       .from('tours')
       .update({ archived: !tour.archived })
@@ -108,14 +100,14 @@ export default function Tours() {
   return (
     <>
       <div className="page-header">
-        <div className="flex items-center justify-between">
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h2 className="page-title">Tournées</h2>
             <p className="page-subtitle">{tours.length} tournées {showArchived ? 'au total' : 'actives'}</p>
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--gray-500)', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--gray-500)', cursor: 'pointer', paddingTop: 4 }}>
             <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
-            Afficher archivées
+            Archivées
           </label>
         </div>
       </div>
@@ -127,7 +119,7 @@ export default function Tours() {
             placeholder="Rechercher une tournée..."
             value={filter}
             onChange={e => setFilter(e.target.value)}
-            style={{ maxWidth: '320px' }}
+            style={{ maxWidth: '320px', width: '100%' }}
           />
         </div>
 
@@ -148,7 +140,7 @@ export default function Tours() {
                 <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--gray-700)', fontSize: '15px' }}>
                   {new Date(date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </span>
-                <span className="badge badge-gray">{dateTours.length} tournées</span>
+                <span className="badge badge-gray">{dateTours.length}</span>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -157,67 +149,80 @@ export default function Tours() {
 
                     {/* Ligne principale */}
                     <div
-                      style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 18px', cursor: 'pointer' }}
+                      style={{ padding: '14px 16px', cursor: 'pointer' }}
                       onClick={() => toggleDetail(t)}
                     >
-                      {/* Nom + statut */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                          <strong style={{ fontFamily: 'var(--font-display)', fontSize: '15px' }}>{t.tour_name}</strong>
-                          {t.archived && <span className="badge badge-gray">Archivée</span>}
-                          {statusBadge(t.status)}
+                      {/* Ligne 1 : Nom + statut + chevron */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{
+                            fontFamily: 'var(--font-display)', fontWeight: 800,
+                            fontSize: 'clamp(14px, 3.5vw, 17px)',
+                            color: 'var(--gray-800)',
+                            wordBreak: 'break-word',
+                          }}>
+                            {t.tour_name}
+                          </span>
+                          {t.archived && <span className="badge badge-gray" style={{ marginLeft: 6 }}>Archivée</span>}
                         </div>
+                        {expanded === t.tour_id
+                          ? <ChevronUp size={16} color="var(--gray-400)" style={{ flexShrink: 0 }} />
+                          : <ChevronDown size={16} color="var(--gray-400)" style={{ flexShrink: 0 }} />
+                        }
                       </div>
 
-                      {/* Stats */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexShrink: 0 }}>
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '18px' }}>
-                            {t.scanned_count}<span style={{ color: 'var(--gray-300)', fontWeight: 400, fontSize: '13px' }}>/{t.total_parcels}</span>
-                          </div>
-                          <div style={{ fontSize: '10px', color: 'var(--gray-400)', textTransform: 'uppercase' }}>Scannés</div>
-                        </div>
+                      {/* Ligne 2 : Stats + actions */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        {/* Statut */}
+                        {statusBadge(t.status)}
 
+                        {/* Scannés */}
+                        <span style={{ fontSize: 13, color: 'var(--gray-600)', fontWeight: 500 }}>
+                          <span style={{ fontWeight: 700, color: 'var(--gray-800)' }}>{t.scanned_count}</span>
+                          <span style={{ color: 'var(--gray-300)' }}>/{t.total_parcels}</span>
+                          <span style={{ color: 'var(--gray-400)', fontWeight: 400, marginLeft: 2 }}>scannés</span>
+                        </span>
+
+                        {/* Manquants */}
                         {t.missing_count > 0 && (
-                          <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '18px', color: 'var(--red)' }}>
-                              {t.missing_count}
-                            </div>
-                            <div style={{ fontSize: '10px', color: 'var(--gray-400)', textTransform: 'uppercase' }}>Manquants</div>
-                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)' }}>
+                            {t.missing_count} manquants
+                          </span>
                         )}
 
+                        {/* Anomalies */}
                         {(t.wrong_tour_count + t.unknown_count) > 0 && (
-                          <span className="badge badge-orange">{t.wrong_tour_count + t.unknown_count} anomalies</span>
+                          <span className="badge badge-orange">
+                            {t.wrong_tour_count + t.unknown_count} anomalies
+                          </span>
                         )}
 
+                        {/* Reprises */}
                         {t.excluded_parcels > 0 && (
-                          <span className="badge badge-gray">{t.excluded_parcels} reprise{t.excluded_parcels > 1 ? 's' : ''}</span>
+                          <span className="badge badge-gray">
+                            {t.excluded_parcels} reprise{t.excluded_parcels > 1 ? 's' : ''}
+                          </span>
                         )}
-                      </div>
 
-                      {/* Actions */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                        <button
-                          className="btn btn-primary btn-sm"
-                          onClick={() => navigate(`/operator/scan/${t.tour_id}`)}
-                          title="Scanner cette tournée"
-                        >
-                          <ScanLine size={14} /> Scanner
-                        </button>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => toggleArchive(t)}
-                          title={t.archived ? 'Désarchiver' : 'Archiver'}
-                        >
-                          {t.archived ? <RotateCcw size={14} /> : <Archive size={14} />}
-                        </button>
+                        {/* Actions — à droite */}
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => navigate(`/admin/scan/${t.tour_id}`)}
+                          >
+                            <ScanLine size={13} />
+                            <span style={{ display: 'none' }}>Scanner</span>
+                            <span className="btn-label-desktop">Scanner</span>
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={e => toggleArchive(e, t)}
+                            title={t.archived ? 'Désarchiver' : 'Archiver'}
+                          >
+                            {t.archived ? <RotateCcw size={14} /> : <Archive size={14} />}
+                          </button>
+                        </div>
                       </div>
-
-                      {expanded === t.tour_id
-                        ? <ChevronUp size={16} color="var(--gray-400)" />
-                        : <ChevronDown size={16} color="var(--gray-400)" />
-                      }
                     </div>
 
                     {/* Panneau de détail */}
@@ -228,90 +233,84 @@ export default function Tours() {
                             <div className="spinner dark" />
                           </div>
                         ) : detail[t.tour_id] ? (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 0 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 0 }}>
 
-                            {/* Colonne 1 : Tous les colis */}
-                            <div style={{ borderRight: '1px solid var(--gray-100)' }}>
-                              <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <Package size={13} color="var(--gray-400)" />
-                                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--gray-700)' }}>Tous les colis</span>
+                            {/* Tous les colis */}
+                            <div style={{ borderRight: '1px solid var(--gray-100)', borderBottom: '1px solid var(--gray-100)' }}>
+                              <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                  <Package size={12} color="var(--gray-400)" />
+                                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-700)' }}>Tous les colis</span>
                                 </div>
-                                <span style={{ fontSize: '11px', color: 'var(--gray-400)' }}>{detail[t.tour_id].activeParcels.length}</span>
+                                <span style={{ fontSize: 10, color: 'var(--gray-400)' }}>{detail[t.tour_id].activeParcels.length}</span>
                               </div>
-                              <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
+                              <div style={{ maxHeight: 200, overflowY: 'auto' }}>
                                 {detail[t.tour_id].activeParcels.map(p => {
                                   const isScanned = detail[t.tour_id].scannedBarcodes.has(p.barcode)
                                   return (
-                                    <div key={p.barcode} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 16px', borderBottom: '1px solid var(--gray-100)', background: isScanned ? '#f0fdf4' : undefined }}>
-                                      <span style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, background: isScanned ? '#05996920' : 'var(--red-light)', color: isScanned ? '#059669' : 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 }}>
+                                    <div key={p.barcode} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderBottom: '1px solid var(--gray-100)', background: isScanned ? '#f0fdf4' : undefined }}>
+                                      <span style={{ color: isScanned ? '#059669' : 'var(--red)', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
                                         {isScanned ? '✓' : '✗'}
                                       </span>
-                                      <code style={{ fontSize: '11px', color: 'var(--gray-600)' }}>{p.barcode}</code>
+                                      <code style={{ fontSize: 11, color: 'var(--gray-600)' }}>{p.barcode}</code>
                                     </div>
                                   )
                                 })}
                               </div>
                             </div>
 
-                            {/* Colonne 2 : Manquants */}
-                            <div style={{ borderRight: '1px solid var(--gray-100)' }}>
-                              <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--gray-100)', background: detail[t.tour_id].missingParcels.length > 0 ? 'var(--red-light)' : 'var(--green-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 600, color: detail[t.tour_id].missingParcels.length > 0 ? '#991b1b' : '#065f46' }}>
-                                  Manquants
-                                </span>
-                                <span style={{ fontSize: '11px', fontWeight: 600, color: detail[t.tour_id].missingParcels.length > 0 ? '#991b1b' : '#065f46' }}>
-                                  {detail[t.tour_id].missingParcels.length}
-                                </span>
+                            {/* Manquants */}
+                            <div style={{ borderRight: '1px solid var(--gray-100)', borderBottom: '1px solid var(--gray-100)' }}>
+                              <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--gray-100)', background: detail[t.tour_id].missingParcels.length > 0 ? 'var(--red-light)' : 'var(--green-light)', display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: detail[t.tour_id].missingParcels.length > 0 ? '#991b1b' : '#065f46' }}>Manquants</span>
+                                <span style={{ fontSize: 10, fontWeight: 600, color: detail[t.tour_id].missingParcels.length > 0 ? '#991b1b' : '#065f46' }}>{detail[t.tour_id].missingParcels.length}</span>
                               </div>
-                              <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
-                                {detail[t.tour_id].missingParcels.length === 0 ? (
-                                  <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--green)', fontSize: '12px' }}>Tous scannés ✓</div>
-                                ) : detail[t.tour_id].missingParcels.map(p => (
-                                  <div key={p.barcode} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 16px', borderBottom: '1px solid var(--gray-100)' }}>
-                                    <span style={{ color: 'var(--red)', fontSize: 11 }}>✗</span>
-                                    <code style={{ fontSize: '11px', color: 'var(--gray-600)' }}>{p.barcode}</code>
-                                  </div>
-                                ))}
+                              <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                                {detail[t.tour_id].missingParcels.length === 0
+                                  ? <div style={{ padding: '16px 14px', color: 'var(--green)', fontSize: 12, textAlign: 'center' }}>Tous scannés ✓</div>
+                                  : detail[t.tour_id].missingParcels.map(p => (
+                                    <div key={p.barcode} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderBottom: '1px solid var(--gray-100)' }}>
+                                      <span style={{ color: 'var(--red)', fontSize: 10, fontWeight: 700 }}>✗</span>
+                                      <code style={{ fontSize: 11, color: 'var(--gray-600)' }}>{p.barcode}</code>
+                                    </div>
+                                  ))
+                                }
                               </div>
                             </div>
 
-                            {/* Colonne 3 : Anomalies + Reprises */}
-                            <div>
-                              <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--gray-100)', background: detail[t.tour_id].anomalies.length > 0 ? '#fff7ed' : 'var(--gray-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <AlertTriangle size={12} color={detail[t.tour_id].anomalies.length > 0 ? 'var(--orange)' : 'var(--gray-400)'} />
-                                  <span style={{ fontSize: '12px', fontWeight: 600, color: detail[t.tour_id].anomalies.length > 0 ? '#92400e' : 'var(--gray-700)' }}>
-                                    Anomalies
-                                  </span>
+                            {/* Anomalies + Reprises */}
+                            <div style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                              <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--gray-100)', background: detail[t.tour_id].anomalies.length > 0 ? '#fff7ed' : 'var(--gray-50)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                  <AlertTriangle size={11} color={detail[t.tour_id].anomalies.length > 0 ? 'var(--orange)' : 'var(--gray-400)'} />
+                                  <span style={{ fontSize: 11, fontWeight: 600, color: detail[t.tour_id].anomalies.length > 0 ? '#92400e' : 'var(--gray-700)' }}>Anomalies</span>
                                 </div>
-                                <span style={{ fontSize: '11px', color: 'var(--gray-400)' }}>{detail[t.tour_id].anomalies.length}</span>
+                                <span style={{ fontSize: 10, color: 'var(--gray-400)' }}>{detail[t.tour_id].anomalies.length}</span>
                               </div>
-                              <div style={{ maxHeight: '160px', overflowY: 'auto' }}>
-                                {detail[t.tour_id].anomalies.length === 0 ? (
-                                  <div style={{ padding: '16px', textAlign: 'center', color: 'var(--gray-300)', fontSize: '12px' }}>Aucune anomalie</div>
-                                ) : detail[t.tour_id].anomalies.map((s, i) => (
-                                  <div key={i} style={{ padding: '6px 16px', borderBottom: '1px solid var(--gray-100)', background: '#fff7ed' }}>
-                                    <code style={{ fontSize: '11px', color: '#92400e', fontWeight: 600 }}>{s.barcode_scanned}</code>
-                                    <div style={{ fontSize: '10px', color: 'var(--gray-400)', marginTop: '1px' }}>
-                                      {new Date(s.scanned_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                                      {s.users?.full_name ? ` · ${s.users.full_name}` : ''}
+                              <div style={{ maxHeight: 120, overflowY: 'auto' }}>
+                                {detail[t.tour_id].anomalies.length === 0
+                                  ? <div style={{ padding: '12px 14px', color: 'var(--gray-300)', fontSize: 12, textAlign: 'center' }}>Aucune</div>
+                                  : detail[t.tour_id].anomalies.map((s, i) => (
+                                    <div key={i} style={{ padding: '5px 14px', borderBottom: '1px solid var(--gray-100)', background: '#fff7ed' }}>
+                                      <code style={{ fontSize: 11, color: '#92400e', fontWeight: 600 }}>{s.barcode_scanned}</code>
+                                      <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 1 }}>
+                                        {new Date(s.scanned_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  ))
+                                }
                               </div>
 
-                              {/* Reprises */}
                               {detail[t.tour_id].excluded.length > 0 && (
                                 <>
-                                  <div style={{ padding: '10px 16px', borderTop: '1px solid var(--gray-100)', borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)', display: 'flex', justifyContent: 'space-between' }}>
-                                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--gray-600)' }}>Reprises</span>
-                                    <span style={{ fontSize: '11px', color: 'var(--gray-400)' }}>{detail[t.tour_id].excluded.length}</span>
+                                  <div style={{ padding: '8px 14px', borderTop: '1px solid var(--gray-100)', borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)', display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-600)' }}>Reprises</span>
+                                    <span style={{ fontSize: 10, color: 'var(--gray-400)' }}>{detail[t.tour_id].excluded.length}</span>
                                   </div>
-                                  <div style={{ maxHeight: '100px', overflowY: 'auto' }}>
+                                  <div style={{ maxHeight: 80, overflowY: 'auto' }}>
                                     {detail[t.tour_id].excluded.map(p => (
-                                      <div key={p.barcode} style={{ padding: '6px 16px', borderBottom: '1px solid var(--gray-100)' }}>
-                                        <code style={{ fontSize: '11px', color: 'var(--gray-500)' }}>{p.barcode}</code>
+                                      <div key={p.barcode} style={{ padding: '5px 14px', borderBottom: '1px solid var(--gray-100)' }}>
+                                        <code style={{ fontSize: 11, color: 'var(--gray-500)' }}>{p.barcode}</code>
                                       </div>
                                     ))}
                                   </div>
@@ -329,6 +328,13 @@ export default function Tours() {
           ))
         )}
       </div>
+
+      <style>{`
+        .btn-label-desktop { display: inline; margin-left: 4px; }
+        @media (max-width: 480px) {
+          .btn-label-desktop { display: none; }
+        }
+      `}</style>
     </>
   )
 }
