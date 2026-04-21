@@ -46,6 +46,7 @@ export default function App() {
         <Route path="users" element={<Users />} />
         <Route path="search-parcel" element={<SearchParcel />} />
         <Route path="search-tours" element={<SearchTours />} />
+        <Route path="scan/:tourId" element={<ScanPage />} />
       </Route>
 
       {/* Operator routes */}
