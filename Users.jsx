@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
-import { Users as UsersIcon, Plus, X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function Users() {
@@ -13,7 +13,10 @@ export default function Users() {
   useEffect(() => { fetchUsers() }, [])
 
   async function fetchUsers() {
-    const { data } = await supabase.from('users').select('*').order('created_at', { ascending: false })
+    const { data } = await supabase
+      .from('users')
+      .select('*')
+      .order('created_at', { ascending: false })
     setUsers(data || [])
     setLoading(false)
   }
@@ -22,20 +25,40 @@ export default function Users() {
     e.preventDefault()
     setSaving(true)
     try {
-      // Créer via Supabase Auth Admin (nécessite service role en prod)
-      // En attendant, on utilise signUp avec confirmation désactivée
-      const { data, error } = await supabase.auth.admin.createUser({
+      // Créer le compte via signUp (fonctionne côté client)
+      const { data, error } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
-        email_confirm: true,
-        user_metadata: { full_name: form.full_name, role: form.role },
+        options: {
+          data: {
+            full_name: form.full_name,
+            role: form.role,
+          },
+          emailRedirectTo: window.location.origin,
+        },
       })
 
       if (error) throw error
+      if (!data.user) throw new Error('Utilisateur non créé')
 
-      // Mettre à jour le rôle si nécessaire
-      if (form.role === 'admin') {
-        await supabase.from('users').update({ role: 'admin' }).eq('id', data.user.id)
+      // Mettre à jour le rôle et le nom dans la table users
+      // (le trigger handle_new_user crée la ligne, on la met à jour)
+      await new Promise(r => setTimeout(r, 1000)) // laisser le trigger s'exécuter
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ role: form.role, full_name: form.full_name })
+        .eq('id', data.user.id)
+
+      if (updateError) {
+        // Si le trigger n'a pas encore créé la ligne, on la crée manuellement
+        await supabase.from('users').upsert({
+          id: data.user.id,
+          email: form.email,
+          full_name: form.full_name,
+          role: form.role,
+          active: true,
+        })
       }
 
       toast.success('Utilisateur créé avec succès')
@@ -109,9 +132,9 @@ export default function Users() {
                             fontSize: '12px', fontWeight: 700, flexShrink: 0,
                             fontFamily: 'var(--font-display)',
                           }}>
-                            {u.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                            {(u.full_name || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                           </div>
-                          <span style={{ fontWeight: 500 }}>{u.full_name}</span>
+                          <span style={{ fontWeight: 500 }}>{u.full_name || '—'}</span>
                         </div>
                       </td>
                       <td style={{ color: 'var(--gray-500)' }}>{u.email}</td>
@@ -158,40 +181,64 @@ export default function Users() {
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <h3 className="modal-title">Nouvel utilisateur</h3>
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}><X size={16} /></button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}>
+                  <X size={16} />
+                </button>
               </div>
             </div>
             <form onSubmit={handleCreate}>
               <div className="modal-body">
                 <div className="form-group">
                   <label className="form-label">Nom complet</label>
-                  <input className="form-input" required value={form.full_name}
+                  <input
+                    className="form-input" required
+                    value={form.full_name}
                     onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
-                    placeholder="Prénom Nom" />
+                    placeholder="Prénom Nom"
+                  />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Email</label>
-                  <input className="form-input" type="email" required value={form.email}
+                  <input
+                    className="form-input" type="email" required
+                    value={form.email}
                     onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                    placeholder="email@exemple.com" />
+                    placeholder="email@exemple.com"
+                  />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Mot de passe temporaire</label>
-                  <input className="form-input" type="password" required value={form.password}
+                  <input
+                    className="form-input" type="password" required
+                    value={form.password}
                     onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                    placeholder="Min. 6 caractères" minLength={6} />
+                    placeholder="Min. 6 caractères"
+                    minLength={6}
+                  />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Rôle</label>
-                  <select className="form-input" value={form.role}
-                    onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+                  <select
+                    className="form-input"
+                    value={form.role}
+                    onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+                  >
                     <option value="operator">Opérateur</option>
                     <option value="admin">Administrateur</option>
                   </select>
                 </div>
+
+                <div style={{
+                  padding: '12px 14px', background: 'var(--blue-light)',
+                  borderRadius: 'var(--radius-sm)', fontSize: '13px', color: '#1e40af'
+                }}>
+                  ℹ️ L'utilisateur recevra un email de confirmation. Il pourra se connecter immédiatement avec le mot de passe temporaire.
+                </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Annuler</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>
+                  Annuler
+                </button>
                 <button type="submit" className="btn btn-primary" disabled={saving}>
                   {saving ? <><div className="spinner" /> Création...</> : 'Créer l\'utilisateur'}
                 </button>
