@@ -145,11 +145,21 @@ function parsePDFText(text) {
     if (!inChargement || line === '\f') continue
 
     // ── Reprise : marquer le dernier colis ajouté comme exclu ──
-    if (line.match(/Type\s+prestation/i) && line.match(/Reprise/i)) {
+    // Reprise simple → exclure du scan
+    if (line.match(/Type\s+prestation/i) && line.match(/\bReprise\b/i) && !line.match(/Livraison contre reprise/i)) {
       const t = tours[currentTourName]
       if (t.parcels.length > 0) {
         const last = t.parcels.pop()
         t.excluded.push({ ...last, exclusionReason: 'Reprise' })
+      }
+      continue
+    }
+    // Livraison contre reprise → livraison normale scannable MAIS aussi à afficher dans Reprises
+    if (line.match(/Type\s+prestation/i) && line.match(/Livraison contre reprise/i)) {
+      const t = tours[currentTourName]
+      if (t.parcels.length > 0) {
+        // Marquer le dernier colis comme "livraison contre reprise" sans l'exclure
+        t.parcels[t.parcels.length - 1].isLivraisonContreReprise = true
       }
       continue
     }
@@ -273,7 +283,12 @@ export default function UploadPDF() {
 
         if (tour.parcels.length > 0) {
           await supabase.from('parcels').upsert(
-            tour.parcels.map(p => ({ tour_id: tourData.id, barcode: p.barcode, excluded: false })),
+            tour.parcels.map(p => ({
+              tour_id: tourData.id,
+              barcode: p.barcode,
+              excluded: false,
+              exclusion_reason: p.isLivraisonContreReprise ? 'Livraison contre reprise' : null,
+            })),
             { onConflict: 'barcode', ignoreDuplicates: true }
           )
           totalParcels += tour.parcels.length
