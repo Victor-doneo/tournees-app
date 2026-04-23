@@ -181,7 +181,7 @@ function parsePDFText(text) {
 function matchTourName(rawName, referenceList) {
   const normalizedRaw = normalize(rawName)
   const found = referenceList.find(ref => normalizedRaw.includes(normalize(ref.name)))
-  if (found) return { matched: true, officialName: found.name }
+  if (found) return { matched: true, officialName: found.name, referenceId: found.id }
   return { matched: false, rawName }
 }
 
@@ -258,9 +258,6 @@ export default function UploadPDF() {
         .from('tours_references')
         .select('id, name')
 
-      console.log('Références chargées:', referenceList)
-      console.log('Tournées parsées:', parsedTours.map(t => t.name))
-      console.log('Normalize test:', parsedTours.map(t => ({ raw: t.name, normalized: t.name.replace(/\s+/g, '').toLowerCase() })))
 
       // Matcher chaque tournée
       const matched = []
@@ -269,7 +266,7 @@ export default function UploadPDF() {
       for (const tour of parsedTours) {
         const result = matchTourName(tour.name, referenceList || [])
         if (result.matched) {
-          matched.push({ ...tour, finalName: result.officialName })
+          matched.push({ ...tour, finalName: result.officialName, referenceId: result.referenceId })
         } else {
           unmatched.push({ rawName: tour.name, manualName: '', parcels: tour.parcels, excluded: tour.excluded })
         }
@@ -307,12 +304,22 @@ export default function UploadPDF() {
 
     setResolving(true)
     try {
-      const resolvedTours = unmatchedTours.map(t => ({
-        name: t.rawName,
-        finalName: t.manualName.trim(),
-        parcels: t.parcels,
-        excluded: t.excluded,
-      }))
+      const resolvedTours = []
+      for (const t of unmatchedTours) {
+        const finalName = t.manualName.trim()
+        // Créer la ligne dans tours_references
+        const { data: refData } = await supabase
+          .from('tours_references')
+          .upsert({ name: finalName }, { onConflict: 'name' })
+          .select('id').single()
+        resolvedTours.push({
+          name: t.rawName,
+          finalName,
+          referenceId: refData ? refData.id : null,
+          parcels: t.parcels,
+          excluded: t.excluded,
+        })
+      }
 
       const allTours = [...(pendingData.matched || []), ...resolvedTours]
       await insertTours(allTours, pendingData.dateData, pendingData.uploadRecord)
@@ -339,6 +346,7 @@ export default function UploadPDF() {
           total_parcels: tour.parcels.length,
           excluded_parcels: tour.excluded.length,
           status: 'pending',
+          reference_id: tour.referenceId || null,
         }, { onConflict: 'delivery_date_id,name' })
         .select().single()
 
