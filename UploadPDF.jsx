@@ -258,6 +258,10 @@ export default function UploadPDF() {
         .from('tours_references')
         .select('id, name')
 
+      console.log('Références chargées:', referenceList)
+      console.log('Tournées parsées:', parsedTours.map(t => t.name))
+      console.log('Normalize test:', parsedTours.map(t => ({ raw: t.name, normalized: t.name.replace(/\s+/g, '').toLowerCase() })))
+
       // Matcher chaque tournée
       const matched = []
       const unmatched = []
