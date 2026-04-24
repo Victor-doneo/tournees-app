@@ -180,16 +180,9 @@ function parsePDFText(text) {
 // Retourne { matched: true, officialName } ou { matched: false, rawName }
 function matchTourName(rawName, referenceList) {
   const normalizedRaw = normalize(rawName)
-  const found = referenceList
+  const found = [...referenceList]
     .sort((a, b) => b.name.length - a.name.length) // priorité au plus long match
-    .find(ref => {
-      const normRef = normalize(ref.name)
-      const idx = normalizedRaw.indexOf(normRef)
-      if (idx === -1) return false
-      // Vérifier que le caractère suivant n'est pas alphanumérique
-      const nextChar = normalizedRaw[idx + normRef.length]
-      return !nextChar || !/[a-z0-9]/.test(nextChar)
-    })
+    .find(ref => normalizedRaw.includes(normalize(ref.name)))
   if (found) return { matched: true, officialName: found.name, referenceId: found.id }
   return { matched: false, rawName }
 }
