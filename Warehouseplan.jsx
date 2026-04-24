@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from './supabase'
-import { Edit3, Eye, Trash2, RotateCcw, Upload, Copy, ZoomIn, ZoomOut, ChevronDown, X as XIcon } from 'lucide-react'
+import { Edit3, Eye, Trash2, RotateCcw, Upload, Copy, ZoomIn, ZoomOut, X as XIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const CANVAS_W = 1200
@@ -484,13 +484,5 @@ export default function WarehousePlan() {
         </div>
       </div>
     </>
-  )
-}
-
-function XIcon({ size, color }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color || 'currentColor'} strokeWidth="2.5">
-      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-    </svg>
   )
 }
