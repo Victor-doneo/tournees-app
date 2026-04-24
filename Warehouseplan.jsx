@@ -338,6 +338,7 @@ export default function WarehousePlan() {
                 </button>
                 <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
                   const f = e.target.files[0]; if (!f) return
+                console.log('Fichier sélectionné:', f)
                   const r = new FileReader(); r.onload = ev => setBgDataUrl(ev.target.result); r.readAsDataURL(f)
                 }} />
                 <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>Cliquez-glissez pour créer une zone</span>
