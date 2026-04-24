@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import {
-  LayoutDashboard, Truck, Upload, Users, Search, FileSearch, RotateCcw, LogOut, Menu, X
+  LayoutDashboard, Truck, Upload, Users, Search, FileSearch, RotateCcw, LogOut, Menu, X, BookMarked, ClipboardList
 } from 'lucide-react'
 
 const navItems = [
@@ -16,6 +16,11 @@ const navItems2 = [
   { to: '/admin/search-tours', label: 'Recherche tournées', icon: <FileSearch size={16} /> },
   { to: '/admin/users', label: 'Utilisateurs', icon: <Users size={16} /> },
   { to: '/admin/reprises', label: 'Reprises', icon: <RotateCcw size={16} /> },
+  { to: '/admin/reference-tours', label: 'Tournées de référence', icon: <BookMarked size={16} /> },
+]
+
+const navItems3 = [
+  { to: '/admin/preparation-tournees', label: 'Préparation des tournées', icon: <ClipboardList size={16} /> },
 ]
 
 export default function AdminLayout() {
@@ -36,7 +41,6 @@ export default function AdminLayout() {
 
   return (
     <div className="app-layout">
-
       {/* Overlay mobile */}
       <div
         className={`sidebar-overlay${sidebarOpen ? ' open' : ''}`}
@@ -82,6 +86,18 @@ export default function AdminLayout() {
               {item.label}
             </NavLink>
           ))}
+          <span className="sidebar-section-label" style={{ marginTop: '8px' }}>Analyse</span>
+          {navItems3.map(item => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              onClick={closeSidebar}
+            >
+              {item.icon}
+              {item.label}
+            </NavLink>
+          ))}
         </nav>
 
         <div className="sidebar-footer">
@@ -110,7 +126,6 @@ export default function AdminLayout() {
             {initials}
           </div>
         </div>
-
         <Outlet />
       </main>
     </div>
