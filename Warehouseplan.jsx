@@ -21,6 +21,7 @@ export default function WarehousePlan() {
   const [bgDataUrl, setBgDataUrl] = useState(null)
 
   const [drawing, setDrawing] = useState(false)
+  const [dragZone, setDragZone] = useState(null) // { zoneId, offsetX, offsetY }
   const [startPos, setStartPos] = useState(null)
   const [currentRect, setCurrentRect] = useState(null)
   const [selectedZone, setSelectedZone] = useState(null)
@@ -146,16 +147,33 @@ export default function WarehousePlan() {
     return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale }
   }
 
-  function handleMouseDown(e) {
+  function handleMouseDown(e, zoneId) {
     if (mode !== 'edit') return
     const pos = getCanvasPos(e)
+    if (zoneId) {
+      // Déplacer une zone existante
+      const zone = zones.find(z => z.id === zoneId)
+      if (zone) {
+        e.stopPropagation()
+        setDragZone({ zoneId, offsetX: pos.x - zone.x, offsetY: pos.y - zone.y })
+      }
+      return
+    }
     setDrawing(true); setStartPos(pos)
     setCurrentRect({ x: pos.x, y: pos.y, width: 0, height: 0 })
   }
 
   function handleMouseMove(e) {
-    if (!drawing || mode !== 'edit') return
+    if (mode !== 'edit') return
     const pos = getCanvasPos(e)
+    if (dragZone) {
+      setZones(prev => prev.map(z => z.id === dragZone.zoneId
+        ? { ...z, x: Math.round(pos.x - dragZone.offsetX), y: Math.round(pos.y - dragZone.offsetY) }
+        : z
+      ))
+      return
+    }
+    if (!drawing) return
     setCurrentRect({
       x: Math.min(startPos.x, pos.x), y: Math.min(startPos.y, pos.y),
       width: Math.abs(pos.x - startPos.x), height: Math.abs(pos.y - startPos.y),
@@ -163,7 +181,17 @@ export default function WarehousePlan() {
   }
 
   async function handleMouseUp() {
-    if (!drawing || mode !== 'edit') return
+    if (mode !== 'edit') return
+    if (dragZone) {
+      // Sauvegarder la nouvelle position
+      const zone = zones.find(z => z.id === dragZone.zoneId)
+      if (zone) {
+        await supabase.from('warehouse_zones').update({ x: zone.x, y: zone.y }).eq('id', zone.id)
+      }
+      setDragZone(null)
+      return
+    }
+    if (!drawing) return
     setDrawing(false)
     if (currentRect?.width > MIN_ZONE_SIZE && currentRect?.height > MIN_ZONE_SIZE) {
       const { data, error } = await supabase.from('warehouse_zones').insert({
@@ -334,7 +362,7 @@ export default function WarehousePlan() {
                   : 'repeating-linear-gradient(0deg, transparent, transparent 39px, #e5e7eb 39px, #e5e7eb 40px), repeating-linear-gradient(90deg, transparent, transparent 39px, #e5e7eb 39px, #e5e7eb 40px)',
                 backgroundSize: bgDataUrl ? '100% 100%' : 'auto',
               }}
-              onMouseDown={handleMouseDown}
+              onMouseDown={e => handleMouseDown(e, null)}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={() => { if (drawing) { setDrawing(false); setCurrentRect(null) } }}
@@ -355,11 +383,12 @@ export default function WarehousePlan() {
                       borderRadius: 4,
                       background: isDragTarget ? 'rgba(99,102,241,0.15)' : assign ? 'rgba(5,150,105,0.12)' : 'rgba(255,255,255,0.6)',
                       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                      cursor: mode === 'edit' ? 'default' : 'pointer',
+                      cursor: mode === 'edit' ? 'move' : 'pointer',
                       boxSizing: 'border-box',
                       transition: 'border-color 0.15s, background 0.15s',
                       overflow: 'hidden',
                     }}
+                    onMouseDown={e => handleMouseDown(e, zone.id)}
                     onClick={e => { e.stopPropagation(); if (mode === 'edit') setSelectedZone(isSelected ? null : zone.id) }}
                     onDragOver={e => { e.preventDefault(); setDragOver(zone.id) }}
                     onDragLeave={() => setDragOver(null)}
