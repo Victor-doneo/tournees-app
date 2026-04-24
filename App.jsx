@@ -10,6 +10,8 @@ import SearchParcel from './SearchParcel'
 import SearchTours from './SearchTours'
 import UploadPDF from './UploadPDF'
 import Reprises from './Reprises'
+import ReferenceTours from './ReferenceTours'
+import PreparationTournees from './PreparationTournees'
 import OperatorHome from './OperatorHome'
 import ScanPage from './ScanPage'
 
@@ -28,7 +30,6 @@ function PrivateRoute({ children, adminOnly = false }) {
 
 export default function App() {
   const { user, profile, loading } = useAuth()
-
   if (loading) return (
     <div className="loading-center" style={{ height: '100vh' }}>
       <div className="spinner dark" />
@@ -48,6 +49,8 @@ export default function App() {
         <Route path="search-parcel" element={<SearchParcel />} />
         <Route path="search-tours" element={<SearchTours />} />
         <Route path="reprises" element={<Reprises />} />
+        <Route path="reference-tours" element={<ReferenceTours />} />
+        <Route path="preparation-tournees" element={<PreparationTournees />} />
         <Route path="scan/:tourId" element={<ScanPage />} />
       </Route>
 
