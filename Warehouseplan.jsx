@@ -13,15 +13,16 @@ export default function WarehousePlan() {
 
   const [mode, setMode] = useState('view')
   const [zones, setZones] = useState([])
-  const [assignments, setAssignments] = useState({}) // zoneId -> { refId, refName, date }
-  const [groupDates, setGroupDates] = useState([]) // dates sélectionnées
+  const [assignments, setAssignments] = useState({})
+  const [groupDates, setGroupDates] = useState([])
   const [availableDates, setAvailableDates] = useState([])
-  const [tourSlots, setTourSlots] = useState([]) // [{ refId, refName, date, dateLabel }]
+  const [tourSlots, setTourSlots] = useState([])
   const [unassigned, setUnassigned] = useState([])
   const [bgDataUrl, setBgDataUrl] = useState(null)
+  const [bgUploading, setBgUploading] = useState(false)
 
   const [drawing, setDrawing] = useState(false)
-  const [dragZone, setDragZone] = useState(null) // { zoneId, offsetX, offsetY }
+  const [dragZone, setDragZone] = useState(null)
   const [startPos, setStartPos] = useState(null)
   const [currentRect, setCurrentRect] = useState(null)
   const [selectedZone, setSelectedZone] = useState(null)
@@ -37,17 +38,20 @@ export default function WarehousePlan() {
     setLoading(false)
   }
 
+  async function loadBg() {
+    const { data } = await supabase
+      .from('warehouse_settings')
+      .select('bg_url')
+      .single()
+    if (data?.bg_url) setBgDataUrl(data.bg_url)
+  }
+
   async function loadDates() {
     const { data } = await supabase
       .from('delivery_dates')
       .select('id, delivery_date')
       .order('delivery_date', { ascending: false })
     setAvailableDates(data || [])
-  }
-
-  async function loadBg() {
-    const { data } = await supabase.from('warehouse_settings').select('bg_url').single()
-    if (data?.bg_url) setBgDataUrl(data.bg_url)
   }
 
   async function loadZones() {
@@ -70,7 +74,6 @@ export default function WarehousePlan() {
     setAssignments(assignMap)
   }
 
-  // Charger les tournées quand les dates du groupe changent
   useEffect(() => {
     if (groupDates.length === 0) { setTourSlots([]); return }
     loadTourSlots()
@@ -84,7 +87,6 @@ export default function WarehousePlan() {
 
     if (!tours) return
 
-    // Grouper par référence + date pour détecter les doublons
     const slots = []
     const refDateSeen = {}
 
@@ -95,7 +97,9 @@ export default function WarehousePlan() {
       refDateSeen[key] = true
 
       const dateStr = t.delivery_dates?.delivery_date || ''
-      const dateLabel = dateStr ? new Date(dateStr + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : ''
+      const dateLabel = dateStr
+        ? new Date(dateStr + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
+        : ''
 
       slots.push({
         refId: t.tours_references.id,
@@ -106,7 +110,6 @@ export default function WarehousePlan() {
       })
     }
 
-    // Marquer les références qui apparaissent plusieurs fois
     const refCount = {}
     for (const s of slots) refCount[s.refId] = (refCount[s.refId] || 0) + 1
     for (const s of slots) s.showDate = refCount[s.refId] > 1
@@ -114,7 +117,6 @@ export default function WarehousePlan() {
     setTourSlots(slots)
   }
 
-  // Calculer les slots non assignés
   useEffect(() => {
     const assignedKeys = new Set(
       Object.values(assignments).map(a => `${a.refId}_${a.dateLabel || ''}`)
@@ -139,24 +141,68 @@ export default function WarehousePlan() {
         reference_id: slot.refId,
         date_label: slot.showDate ? slot.dateLabel : null,
       }, { onConflict: 'zone_id' })
-      newAssignments[zone.id] = { refId: slot.refId, refName: slot.refName, dateLabel: slot.showDate ? slot.dateLabel : null }
+      newAssignments[zone.id] = {
+        refId: slot.refId,
+        refName: slot.refName,
+        dateLabel: slot.showDate ? slot.dateLabel : null,
+      }
     }
 
     setAssignments(prev => ({ ...prev, ...newAssignments }))
     toast.success(`${Object.keys(newAssignments).length} tournées assignées`)
   }
 
+  // ── IMAGE DE FOND ─────────────────────────────────────────────────────────────
+  async function handleBgUpload(e) {
+    const f = e.target.files[0]
+    if (!f) return
+    setBgUploading(true)
+    try {
+      const ext = f.name.split('.').pop()
+      const path = `bg/warehouse-bg.${ext}`
+      const { error: upError } = await supabase.storage
+        .from('warehouse-bg')
+        .upload(path, f, { upsert: true })
+
+      if (upError) {
+        toast.error('Erreur upload : ' + upError.message)
+        return
+      }
+
+      const { data: urlData } = supabase.storage
+        .from('warehouse-bg')
+        .getPublicUrl(path)
+
+      const url = urlData.publicUrl + '?t=' + Date.now()
+      setBgDataUrl(url)
+
+      await supabase
+        .from('warehouse_settings')
+        .update({ bg_url: urlData.publicUrl, updated_at: new Date().toISOString() })
+        .not('id', 'is', null)
+
+      toast.success('Image de fond sauvegardée !')
+    } catch (err) {
+      toast.error('Erreur : ' + err.message)
+    } finally {
+      setBgUploading(false)
+      e.target.value = ''
+    }
+  }
+
   // ── DESSIN ────────────────────────────────────────────────────────────────────
   function getCanvasPos(e) {
     const rect = canvasRef.current.getBoundingClientRect()
-    return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale }
+    return {
+      x: (e.clientX - rect.left) / scale,
+      y: (e.clientY - rect.top) / scale,
+    }
   }
 
   function handleMouseDown(e, zoneId) {
     if (mode !== 'edit') return
     const pos = getCanvasPos(e)
     if (zoneId) {
-      // Déplacer une zone existante
       const zone = zones.find(z => z.id === zoneId)
       if (zone) {
         e.stopPropagation()
@@ -164,7 +210,8 @@ export default function WarehousePlan() {
       }
       return
     }
-    setDrawing(true); setStartPos(pos)
+    setDrawing(true)
+    setStartPos(pos)
     setCurrentRect({ x: pos.x, y: pos.y, width: 0, height: 0 })
   }
 
@@ -172,23 +219,25 @@ export default function WarehousePlan() {
     if (mode !== 'edit') return
     const pos = getCanvasPos(e)
     if (dragZone) {
-      setZones(prev => prev.map(z => z.id === dragZone.zoneId
-        ? { ...z, x: Math.round(pos.x - dragZone.offsetX), y: Math.round(pos.y - dragZone.offsetY) }
-        : z
+      setZones(prev => prev.map(z =>
+        z.id === dragZone.zoneId
+          ? { ...z, x: Math.round(pos.x - dragZone.offsetX), y: Math.round(pos.y - dragZone.offsetY) }
+          : z
       ))
       return
     }
     if (!drawing) return
     setCurrentRect({
-      x: Math.min(startPos.x, pos.x), y: Math.min(startPos.y, pos.y),
-      width: Math.abs(pos.x - startPos.x), height: Math.abs(pos.y - startPos.y),
+      x: Math.min(startPos.x, pos.x),
+      y: Math.min(startPos.y, pos.y),
+      width: Math.abs(pos.x - startPos.x),
+      height: Math.abs(pos.y - startPos.y),
     })
   }
 
   async function handleMouseUp() {
     if (mode !== 'edit') return
     if (dragZone) {
-      // Sauvegarder la nouvelle position
       const zone = zones.find(z => z.id === dragZone.zoneId)
       if (zone) {
         await supabase.from('warehouse_zones').update({ x: zone.x, y: zone.y }).eq('id', zone.id)
@@ -200,12 +249,18 @@ export default function WarehousePlan() {
     setDrawing(false)
     if (currentRect?.width > MIN_ZONE_SIZE && currentRect?.height > MIN_ZONE_SIZE) {
       const { data, error } = await supabase.from('warehouse_zones').insert({
-        x: Math.round(currentRect.x), y: Math.round(currentRect.y),
-        width: Math.round(currentRect.width), height: Math.round(currentRect.height),
+        x: Math.round(currentRect.x),
+        y: Math.round(currentRect.y),
+        width: Math.round(currentRect.width),
+        height: Math.round(currentRect.height),
       }).select().single()
-      if (!error && data) { setZones(prev => [...prev, data]); toast.success('Zone créée') }
+      if (!error && data) {
+        setZones(prev => [...prev, data])
+        toast.success('Zone créée')
+      }
     }
-    setCurrentRect(null); setStartPos(null)
+    setCurrentRect(null)
+    setStartPos(null)
   }
 
   async function duplicateZone(zone) {
@@ -215,7 +270,10 @@ export default function WarehousePlan() {
       width: zone.width,
       height: zone.height,
     }).select().single()
-    if (!error && data) { setZones(prev => [...prev, data]); toast.success('Zone dupliquée') }
+    if (!error && data) {
+      setZones(prev => [...prev, data])
+      toast.success('Zone dupliquée')
+    }
   }
 
   async function deleteZone(zoneId) {
@@ -227,7 +285,7 @@ export default function WarehousePlan() {
     toast.success('Zone supprimée')
   }
 
-  // ── DRAG & DROP ───────────────────────────────────────────────────────────────
+  // ── DRAG & DROP ASSIGNATION ───────────────────────────────────────────────────
   async function handleDropOnZone(zoneId, slot) {
     const oldZoneId = Object.keys(assignments).find(k => {
       const a = assignments[k]
@@ -245,7 +303,11 @@ export default function WarehousePlan() {
     setAssignments(prev => {
       const n = { ...prev }
       if (oldZoneId) delete n[parseInt(oldZoneId)]
-      n[zoneId] = { refId: slot.refId, refName: slot.refName, dateLabel: slot.showDate ? slot.dateLabel : null }
+      n[zoneId] = {
+        refId: slot.refId,
+        refName: slot.refName,
+        dateLabel: slot.showDate ? slot.dateLabel : null,
+      }
       return n
     })
   }
@@ -265,7 +327,9 @@ export default function WarehousePlan() {
   }
 
   function formatDate(dateStr) {
-    return new Date(dateStr + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
+    return new Date(dateStr + 'T12:00:00').toLocaleDateString('fr-FR', {
+      weekday: 'short', day: 'numeric', month: 'short',
+    })
   }
 
   return (
@@ -294,7 +358,6 @@ export default function WarehousePlan() {
 
       <div className="page-body" style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
-        {/* Canvas */}
         <div style={{ flex: 1, minWidth: 0 }}>
 
           {/* Sélecteur de dates */}
@@ -333,15 +396,24 @@ export default function WarehousePlan() {
           <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             {mode === 'edit' && (
               <>
-                <button className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()}>
-                  <Upload size={13} /> Image de fond
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={bgUploading}
+                >
+                  <Upload size={13} />
+                  {bgUploading ? 'Upload...' : 'Image de fond'}
                 </button>
-                <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
-                  const f = e.target.files[0]; if (!f) return
-                console.log('Fichier sélectionné:', f)
-                  const r = new FileReader(); r.onload = ev => setBgDataUrl(ev.target.result); r.readAsDataURL(f)
-                }} />
-                <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>Cliquez-glissez pour créer une zone</span>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={handleBgUpload}
+                />
+                <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+                  Cliquez-glissez pour créer une zone · Glissez une zone pour la déplacer
+                </span>
               </>
             )}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
@@ -371,7 +443,10 @@ export default function WarehousePlan() {
               onMouseDown={e => handleMouseDown(e, null)}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
-              onMouseLeave={() => { if (drawing) { setDrawing(false); setCurrentRect(null) } }}
+              onMouseLeave={() => {
+                if (drawing) { setDrawing(false); setCurrentRect(null) }
+                if (dragZone) setDragZone(null)
+              }}
             >
               {zones.map(zone => {
                 const assign = assignments[zone.id]
@@ -415,11 +490,15 @@ export default function WarehousePlan() {
                           {assign.refName}
                         </span>
                         {assign.dateLabel && (
-                          <span style={{ fontSize: 9, color: '#059669', marginTop: 2, textAlign: 'center' }}>({assign.dateLabel})</span>
+                          <span style={{ fontSize: 9, color: '#059669', marginTop: 2, textAlign: 'center' }}>
+                            ({assign.dateLabel})
+                          </span>
                         )}
                         {mode === 'view' && (
-                          <button style={{ position: 'absolute', top: 2, right: 2, background: 'none', border: 'none', cursor: 'pointer', opacity: 0.4, padding: 2 }}
-                            onClick={e => { e.stopPropagation(); removeAssignment(zone.id) }}>
+                          <button
+                            style={{ position: 'absolute', top: 2, right: 2, background: 'none', border: 'none', cursor: 'pointer', opacity: 0.4, padding: 2 }}
+                            onClick={e => { e.stopPropagation(); removeAssignment(zone.id) }}
+                          >
                             <XIcon size={10} color="#dc2626" />
                           </button>
                         )}
@@ -428,7 +507,6 @@ export default function WarehousePlan() {
                       <span style={{ fontSize: 10, color: 'var(--gray-300)' }}>vide</span>
                     )}
 
-                    {/* Boutons mode édition */}
                     {mode === 'edit' && isSelected && (
                       <>
                         <button
@@ -451,7 +529,8 @@ export default function WarehousePlan() {
 
               {currentRect?.width > 5 && (
                 <div style={{
-                  position: 'absolute', left: currentRect.x, top: currentRect.y,
+                  position: 'absolute',
+                  left: currentRect.x, top: currentRect.y,
                   width: currentRect.width, height: currentRect.height,
                   border: '2px dashed var(--accent)', background: 'rgba(99,102,241,0.1)',
                   borderRadius: 4, pointerEvents: 'none',
@@ -467,7 +546,9 @@ export default function WarehousePlan() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--gray-500)' }}>
               <span style={{ width: 12, height: 12, background: 'rgba(255,255,255,0.6)', border: '2px solid var(--gray-300)', borderRadius: 2, display: 'inline-block' }} /> Vide
             </div>
-            <span style={{ fontSize: 11, color: 'var(--gray-400)', marginLeft: 'auto' }}>{zones.length} zones · {Object.keys(assignments).length} assignées</span>
+            <span style={{ fontSize: 11, color: 'var(--gray-400)', marginLeft: 'auto' }}>
+              {zones.length} zones · {Object.keys(assignments).length} assignées
+            </span>
           </div>
         </div>
 
@@ -506,7 +587,9 @@ export default function WarehousePlan() {
                       ⠿ {slot.refName}
                     </div>
                     {slot.showDate && (
-                      <div style={{ fontSize: 10, color: 'var(--accent)', opacity: 0.7, marginTop: 1 }}>({slot.dateLabel})</div>
+                      <div style={{ fontSize: 10, color: 'var(--accent)', opacity: 0.7, marginTop: 1 }}>
+                        ({slot.dateLabel})
+                      </div>
                     )}
                   </div>
                 ))}
