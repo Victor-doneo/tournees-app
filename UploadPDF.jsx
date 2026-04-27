@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { supabase } from './supabase'
 import { useAuth } from './AuthContext'
-import { Upload, FileText, CheckCircle, AlertCircle, X, AlertTriangle } from 'lucide-react'
+import { Upload, FileText, CheckCircle, AlertCircle, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 // ─── PDF.JS ───────────────────────────────────────────────────────────────────
@@ -35,15 +35,20 @@ async function extractTextFromPDF(file) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
 
+    // Regrouper les items par position Y (même Y = même ligne visuelle)
+    // Grouper les items par Y avec une tolérance de 3px
+    // pour gérer les barcodes dont le Y est légèrement décalé
     const byY = {}
     for (const item of content.items) {
       const rawY = item.transform[5]
+      // Chercher un groupe Y existant dans un rayon de 3px
       const yKey = Object.keys(byY).find(k => Math.abs(k - rawY) <= 3)
       const y = yKey !== undefined ? yKey : Math.round(rawY)
       if (!byY[y]) byY[y] = []
       byY[y].push({ x: item.transform[4], str: item.str })
     }
 
+    // Trier Y décroissant (haut → bas), X croissant (gauche → droite)
     const sortedYs = Object.keys(byY).sort((a, b) => b - a)
     for (const y of sortedYs) {
       const items = byY[y].sort((a, b) => a.x - b.x)
@@ -55,6 +60,10 @@ async function extractTextFromPDF(file) {
 }
 
 // ─── NORMALISATION DU NOM DE TOURNÉE ─────────────────────────────────────────
+// Supprime EXACTEMENT le préfixe "ta830camion" (insensible à la casse)
+// + supprime uniquement le suffixe parasite "m " (m minuscule + espace)
+//   qui apparaît dans "ta830camionm MNS75 LV1"
+// NE touche PAS aux lettres majuscules du nom (TKN, SOL, FC, AD, MNS...)
 function extractTourName(raw) {
   return raw
     .replace(/ta830camion(m\s+)?/i, '')
@@ -62,24 +71,21 @@ function extractTourName(raw) {
     .replace(/\s+/g, ' ')
 }
 
-// Normalise un nom pour comparaison (sans espaces, minuscules)
-function normalize(str) {
-  return str.replace(/\s+/g, '').toLowerCase()
-}
-
 // ─── PARSER ───────────────────────────────────────────────────────────────────
 function parsePDFText(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   const tours = {}
+  // Noms déjà vus → on ignore la 2e occurrence (section LIVRAISON)
   const seenTours = new Set()
 
   let currentTourName = null
   let inChargement = false
-  let skip = false
+  let skip = false // true = on est dans une section LIVRAISON à ignorer
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
 
+    // ── CAS 1 : Ligne standard "SOCIETE DE TRANSPORT ... TOURNEE TA830[CAMION|camion]XXX" ──
     const fullTourMatch = line.match(/TOURNEE\s+TA830(?:CAMION|camion)(m\s+)?(.+)/i)
     if (fullTourMatch) {
       const rawSuffix = (fullTourMatch[1] || '') + fullTourMatch[2]
@@ -95,10 +101,12 @@ function parsePDFText(text) {
       continue
     }
 
+    // ── CAS 2 : "ta830camionXXX" seul (MNS1 : nom dans colonne droite sans TOURNEE) ──
     const splitCamionMatch = line.match(/ta830camion(.+)/i)
     if (splitCamionMatch && !line.match(/TOURNEE/i)) {
       let namePart = splitCamionMatch[1].trim()
 
+      // Vérifier si la ligne suivante continue le nom (cas "MNS1alfortville 78 SUD ," + "BIS , ZONE 1")
       const nextLine = (lines[i + 1] || '').trim()
       const isContinuation = nextLine.length > 0
         && nextLine.length < 60
@@ -110,7 +118,7 @@ function parsePDFText(text) {
 
       if (isContinuation) {
         namePart = namePart + ' ' + nextLine
-        i++
+        i++ // sauter la ligne de continuation
       }
 
       const name = extractTourName('ta830camion' + namePart)
@@ -127,6 +135,7 @@ function parsePDFText(text) {
 
     if (skip || !currentTourName) continue
 
+    // ── Sections ──
     if (line === 'CHARGEMENT') { inChargement = true; continue }
 
     if (line.match(/^\s*LIVRAISON\s*$/) && inChargement) {
@@ -135,6 +144,8 @@ function parsePDFText(text) {
 
     if (!inChargement || line === '\f') continue
 
+    // ── Reprise : marquer le dernier colis ajouté comme exclu ──
+    // Reprise simple → exclure du scan
     if (line.match(/Type\s+prestation/i) && line.match(/\bReprise\b/i) && !line.match(/Livraison contre reprise/i)) {
       const t = tours[currentTourName]
       if (t.parcels.length > 0) {
@@ -143,29 +154,38 @@ function parsePDFText(text) {
       }
       continue
     }
+    // Livraison contre reprise → livraison normale scannable MAIS aussi à afficher dans Reprises
     if (line.match(/Type\s+prestation/i) && line.match(/Livraison contre reprise/i)) {
       const t = tours[currentTourName]
       if (t.parcels.length > 0) {
+        // Marquer le dernier colis comme "livraison contre reprise" sans l'exclure
         t.parcels[t.parcels.length - 1].isLivraisonContreReprise = true
       }
       continue
     }
 
+    // ── Ignorer les lignes de métadonnées ──
     if (line.match(/^(Type\s+prestation|Référence|Créneau|Quantité|Imprimé|POIDS|LETTRE DE VOITURE|Réserves|commentaires|©|Emargement)/i)) continue
-    if (line.match(/^\d+\s*\/\s*\d+$/)) continue
-    if (line.match(/^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}/)) continue
+    if (line.match(/^\d+\s*\/\s*\d+$/)) continue               // numéro de page
+    if (line.match(/^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}/)) continue // créneau horaire
 
+    // ── Détection barcode ──
+    // Le barcode est TOUJOURS sur la ligne qui contient LV1_, LV2_ ou LV3_
+    // et c'est LE DERNIER nombre en fin de ligne (9-15 chiffres)
     if (!line.match(/LV[123]_/)) continue
 
+    // Prendre UNIQUEMENT le dernier nombre en fin de ligne = le barcode
     const lastBarcodeMatch = line.match(/(\d{9,15})\s*$/)
     if (!lastBarcodeMatch) continue
 
     const bc = lastBarcodeMatch[1]
-    if (bc.length === 10 && bc.startsWith('0')) continue
-    if (bc.match(/^0033/)) continue
-    if (bc.match(/^33[67]/)) continue
+    // Filtrer les numéros de téléphone
+    if (bc.length === 10 && bc.startsWith('0')) continue  // tel FR 10 chiffres
+    if (bc.match(/^0033/)) continue                       // tel international
+    if (bc.match(/^33[67]/)) continue                     // tel +33 collé
 
     {
+    const m = [null, bc]
       const t = tours[currentTourName]
       const exists = t.parcels.some(p => p.barcode === bc)
         || t.excluded.some(p => p.barcode === bc)
@@ -174,24 +194,6 @@ function parsePDFText(text) {
   }
 
   return Object.values(tours).filter(t => t.parcels.length > 0 || t.excluded.length > 0)
-}
-
-// ─── MATCHING avec reference_tours ───────────────────────────────────────────
-// Retourne { matched: true, officialName } ou { matched: false, rawName }
-function matchTourName(rawName, referenceList) {
-  const normalizedRaw = normalize(rawName)
-  const found = referenceList
-    .sort((a, b) => b.name.length - a.name.length) // priorité au plus long match
-    .find(ref => {
-      const normRef = normalize(ref.name)
-      const idx = normalizedRaw.indexOf(normRef)
-      if (idx === -1) return false
-      // Vérifier que le caractère suivant n'est pas alphanumérique
-      const nextChar = normalizedRaw[idx + normRef.length]
-      return !nextChar || !/[a-z0-9]/.test(nextChar)
-    })
-  if (found) return { matched: true, officialName: found.name, referenceId: found.id }
-  return { matched: false, rawName }
 }
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
@@ -204,11 +206,6 @@ export default function UploadPDF() {
   const [result, setResult] = useState(null)
   const [dragover, setDragover] = useState(false)
   const inputRef = useRef()
-
-  // État pour la résolution manuelle des tournées sans match
-  const [unmatchedTours, setUnmatchedTours] = useState([]) // [{ rawName, manualName, parcels, excluded }]
-  const [pendingData, setPendingData] = useState(null) // données en attente de résolution
-  const [resolving, setResolving] = useState(false)
 
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
@@ -226,13 +223,10 @@ export default function UploadPDF() {
     if (!file || !deliveryDate) return toast.error('Sélectionnez un fichier et une date.')
     setLoading(true)
     setResult(null)
-    setUnmatchedTours([])
-    setPendingData(null)
 
     try {
       setProgress('Envoi du fichier...')
-      const safeName = file.name.normalize('NFD').replace(/[0300-036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_')
-      const path = `${deliveryDate}/${Date.now()}_${safeName}`
+      const safeName = file.name.normalize('NFD').replace(/[0300-036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_'); const path = `${deliveryDate}/${Date.now()}_${safeName}`
       const { error: uploadError } = await supabase.storage
         .from('tour-pdfs').upload(path, file)
       if (uploadError) throw new Error('Erreur upload : ' + uploadError.message)
@@ -260,38 +254,70 @@ export default function UploadPDF() {
       setProgress('Analyse des tournées...')
       const parsedTours = parsePDFText(text)
 
+      console.log('Tournées parsées:', parsedTours.map(t => ({
+        name: t.name, colis: t.parcels.length, reprises: t.excluded.length,
+      })))
+
       if (parsedTours.length === 0) throw new Error('Aucune tournée détectée dans ce PDF.')
 
-      setProgress('Chargement des tournées de référence...')
-      const { data: referenceList } = await supabase
-        .from('tours_references')
-        .select('id, name')
-
-
-      // Matcher chaque tournée
-      const matched = []
-      const unmatched = []
+      setProgress(`Insertion de ${parsedTours.length} tournées...`)
+      let totalTours = 0
+      let totalParcels = 0
 
       for (const tour of parsedTours) {
-        const result = matchTourName(tour.name, referenceList || [])
-        if (result.matched) {
-          matched.push({ ...tour, finalName: result.officialName, referenceId: result.referenceId })
-        } else {
-          unmatched.push({ rawName: tour.name, manualName: '', parcels: tour.parcels, excluded: tour.excluded })
+        const { data: tourData, error: tourError } = await supabase
+          .from('tours')
+          .upsert({
+            delivery_date_id: dateData.id,
+            name: tour.name,
+            total_parcels: tour.parcels.length,
+            excluded_parcels: tour.excluded.length,
+            status: 'pending',
+          }, { onConflict: 'delivery_date_id,name' })
+          .select().single()
+
+        if (tourError) {
+          console.warn(`Tournée ${tour.name} ignorée :`, tourError.message)
+          continue
         }
+
+        if (tour.parcels.length > 0) {
+          await supabase.from('parcels').upsert(
+            tour.parcels.map(p => ({
+              tour_id: tourData.id,
+              barcode: p.barcode,
+              excluded: false,
+              exclusion_reason: p.isLivraisonContreReprise ? 'Livraison contre reprise' : null,
+            })),
+            { onConflict: 'barcode', ignoreDuplicates: true }
+          )
+          totalParcels += tour.parcels.length
+        }
+
+        if (tour.excluded.length > 0) {
+          await supabase.from('parcels').upsert(
+            tour.excluded.map(p => ({
+              tour_id: tourData.id,
+              barcode: p.barcode,
+              excluded: true,
+              exclusion_reason: p.exclusionReason || 'Reprise',
+            })),
+            { onConflict: 'barcode', ignoreDuplicates: true }
+          )
+        }
+        totalTours++
       }
 
-      // Si des tournées n'ont pas de match → demander input manuel
-      if (unmatched.length > 0) {
-        setUnmatchedTours(unmatched)
-        setPendingData({ dateData, uploadRecord, matched })
-        setLoading(false)
-        setProgress('')
-        return
+      if (uploadRecord) {
+        await supabase.from('pdf_uploads').update({
+          status: 'done',
+          tours_created: totalTours,
+          parcels_created: totalParcels,
+        }).eq('id', uploadRecord.id)
       }
 
-      // Sinon tout est matché → on insère directement
-      await insertTours(matched, dateData, uploadRecord)
+      setResult({ success: true, tours: totalTours, parcels: totalParcels, details: parsedTours })
+      toast.success(`Import terminé : ${totalTours} tournées, ${totalParcels} colis`)
 
     } catch (err) {
       console.error('Erreur upload:', err)
@@ -301,106 +327,6 @@ export default function UploadPDF() {
       setLoading(false)
       setProgress('')
     }
-  }
-
-  async function handleResolveUnmatched() {
-    // Vérifier que tous les inputs manuels sont remplis
-    const missing = unmatchedTours.filter(t => !t.manualName.trim())
-    if (missing.length > 0) {
-      toast.error('Veuillez saisir un nom pour chaque tournée non reconnue.')
-      return
-    }
-
-    setResolving(true)
-    try {
-      const resolvedTours = []
-      for (const t of unmatchedTours) {
-        const finalName = t.manualName.trim()
-        // Créer la ligne dans tours_references
-        const { data: refData } = await supabase
-          .from('tours_references')
-          .upsert({ name: finalName }, { onConflict: 'name' })
-          .select('id').single()
-        resolvedTours.push({
-          name: t.rawName,
-          finalName,
-          referenceId: refData ? refData.id : null,
-          parcels: t.parcels,
-          excluded: t.excluded,
-        })
-      }
-
-      const allTours = [...(pendingData.matched || []), ...resolvedTours]
-      await insertTours(allTours, pendingData.dateData, pendingData.uploadRecord)
-      setUnmatchedTours([])
-      setPendingData(null)
-    } catch (err) {
-      console.error('Erreur résolution:', err)
-      toast.error('Erreur : ' + err.message)
-    } finally {
-      setResolving(false)
-    }
-  }
-
-  async function insertTours(tours, dateData, uploadRecord) {
-    let totalTours = 0
-    let totalParcels = 0
-
-    for (const tour of tours) {
-      const { data: tourData, error: tourError } = await supabase
-        .from('tours')
-        .upsert({
-          delivery_date_id: dateData.id,
-          name: tour.finalName,
-          total_parcels: tour.parcels.length,
-          excluded_parcels: tour.excluded.length,
-          status: 'pending',
-          reference_id: tour.referenceId || null,
-        }, { onConflict: 'delivery_date_id,name' })
-        .select().single()
-
-      if (tourError) {
-        console.warn(`Tournée ${tour.finalName} ignorée :`, tourError.message)
-        continue
-      }
-
-      if (tour.parcels.length > 0) {
-        await supabase.from('parcels').upsert(
-          tour.parcels.map(p => ({
-            tour_id: tourData.id,
-            barcode: p.barcode,
-            excluded: false,
-            exclusion_reason: p.isLivraisonContreReprise ? 'Livraison contre reprise' : null,
-          })),
-          { onConflict: 'barcode', ignoreDuplicates: true }
-        )
-        totalParcels += tour.parcels.length
-      }
-
-      if (tour.excluded.length > 0) {
-        await supabase.from('parcels').upsert(
-          tour.excluded.map(p => ({
-            tour_id: tourData.id,
-            barcode: p.barcode,
-            excluded: true,
-            exclusion_reason: p.exclusionReason || 'Reprise',
-          })),
-          { onConflict: 'barcode', ignoreDuplicates: true }
-        )
-      }
-      totalTours++
-    }
-
-    if (uploadRecord) {
-      await supabase.from('pdf_uploads').update({
-        status: 'done',
-        tours_created: totalTours,
-        parcels_created: totalParcels,
-      }).eq('id', uploadRecord.id)
-    }
-
-    setResult({ success: true, tours: totalTours, parcels: totalParcels, details: tours.map(t => ({ name: t.finalName, parcels: t.parcels, excluded: t.excluded })) })
-    toast.success(`Import terminé : ${totalTours} tournées, ${totalParcels} colis`)
   }
 
   return (
@@ -473,62 +399,6 @@ export default function UploadPDF() {
               </div>
             )}
 
-            {/* ── Résolution manuelle des tournées non matchées ── */}
-            {unmatchedTours.length > 0 && (
-              <div style={{
-                padding: '16px 20px', borderRadius: 'var(--radius-sm)',
-                background: '#fffbeb', border: '1px solid #fcd34d',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                  <AlertTriangle size={16} color="#d97706" />
-                  <span style={{ fontWeight: 700, color: '#92400e', fontSize: 14 }}>
-                    {unmatchedTours.length} tournée{unmatchedTours.length > 1 ? 's' : ''} non reconnue{unmatchedTours.length > 1 ? 's' : ''}
-                  </span>
-                </div>
-                <p style={{ fontSize: 12, color: '#92400e', marginBottom: 14 }}>
-                  Ces tournées extraites du PDF ne correspondent à aucun nom officiel. Saisissez le nom correct pour chacune.
-                </p>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {unmatchedTours.map((t, idx) => (
-                    <div key={idx} style={{ background: 'white', borderRadius: 'var(--radius-sm)', border: '1px solid #fcd34d', padding: '12px 14px' }}>
-                      <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 6 }}>
-                        Nom extrait du PDF :
-                        <code style={{ marginLeft: 6, fontWeight: 700, color: 'var(--gray-700)', background: 'var(--gray-100)', padding: '1px 6px', borderRadius: 4 }}>
-                          {t.rawName}
-                        </code>
-                        <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--gray-400)' }}>
-                          ({t.parcels.length} colis)
-                        </span>
-                      </div>
-                      <input
-                        className="form-input"
-                        placeholder="Nom officiel de la tournée..."
-                        value={t.manualName}
-                        onChange={e => {
-                          const updated = [...unmatchedTours]
-                          updated[idx] = { ...updated[idx], manualName: e.target.value }
-                          setUnmatchedTours(updated)
-                        }}
-                        style={{ fontSize: 13 }}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <button
-                  className="btn btn-primary"
-                  onClick={handleResolveUnmatched}
-                  disabled={resolving}
-                  style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
-                >
-                  {resolving
-                    ? <><div className="spinner" /> Importation...</>
-                    : <><CheckCircle size={14} /> Confirmer et importer</>}
-                </button>
-              </div>
-            )}
-
             {result && (
               <div style={{
                 padding: '16px 20px', borderRadius: 'var(--radius-sm)',
@@ -560,18 +430,16 @@ export default function UploadPDF() {
               </div>
             )}
 
-            {unmatchedTours.length === 0 && (
-              <button
-                className="btn btn-primary"
-                onClick={handleUpload}
-                disabled={loading || !file}
-                style={{ alignSelf: 'flex-start' }}
-              >
-                {loading
-                  ? <><div className="spinner" /> Traitement...</>
-                  : <><Upload size={15} /> Importer et analyser</>}
-              </button>
-            )}
+            <button
+              className="btn btn-primary"
+              onClick={handleUpload}
+              disabled={loading || !file}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              {loading
+                ? <><div className="spinner" /> Traitement...</>
+                : <><Upload size={15} /> Importer et analyser</>}
+            </button>
           </div>
         </div>
       </div>
