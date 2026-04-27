@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import {
-  LayoutDashboard, Truck, Upload, Users, Search, FileSearch, RotateCcw, LogOut, Menu, X, BookMarked, ClipboardList, Map
+  LayoutDashboard, Truck, Upload, Users, Search, FileSearch, RotateCcw, LogOut, Menu, X, BookMarked, ClipboardList
 } from 'lucide-react'
 
 const navItems = [
@@ -21,7 +21,6 @@ const navItems2 = [
 
 const navItems3 = [
   { to: '/admin/preparation-tournees', label: 'Préparation des tournées', icon: <ClipboardList size={16} /> },
-  { to: '/admin/warehouse', label: 'Plan entrepôt', icon: <Map size={16} /> },
 ]
 
 export default function AdminLayout() {
