@@ -1,7 +1,13 @@
 import { useState } from 'react'
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
-import { LogOut, Menu, X } from 'lucide-react'
+import { LogOut, Menu, X, Truck, MessageSquarePlus, Search } from 'lucide-react'
+
+const navOperator = [
+  { to: '/operator', label: 'Tournées', icon: <Truck size={16} />, end: true },
+  { to: '/operator/demandes', label: 'Demandes', icon: <MessageSquarePlus size={16} /> },
+  { to: '/operator/search-parcel', label: 'Recherche colis', icon: <Search size={16} /> },
+]
 
 export default function OperatorLayout() {
   const { profile, signOut } = useAuth()
@@ -38,19 +44,20 @@ export default function OperatorLayout() {
           </button>
         </div>
 
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)' }}>
-            <div style={{
-              fontSize: '48px', fontFamily: 'var(--font-display)',
-              fontWeight: 800, color: 'rgba(255,255,255,0.08)', lineHeight: 1
-            }}>
-              SCAN
-            </div>
-            <div style={{ fontSize: '12px', marginTop: '8px', letterSpacing: '1px', textTransform: 'uppercase' }}>
-              Mode opérateur
-            </div>
-          </div>
-        </div>
+        <nav className="sidebar-nav">
+          {navOperator.map(item => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              onClick={() => setSidebarOpen(false)}
+            >
+              {item.icon}
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
 
         <div className="sidebar-footer">
           <div className="user-card">
