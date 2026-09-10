@@ -20,8 +20,17 @@ import AnomaliesPreparation from './AnomaliesPreparation'
 import EmailRecipients from './EmailRecipients'
 import OperatorHome from './OperatorHome'
 import ScanPage from './ScanPage'
+import Demandes from './Demandes'
+import PartnerLayout from './PartnerLayout'
 
-function PrivateRoute({ children, adminOnly = false }) {
+// Détermine la route d'accueil selon le rôle du profil
+function homeForRole(role) {
+  if (role === 'admin') return '/admin'
+  if (role === 'partner') return '/partner'
+  return '/operator'
+}
+
+function PrivateRoute({ children, roles }) {
   const { user, profile, loading } = useAuth()
   if (loading) return (
     <div className="loading-center" style={{ height: '100vh' }}>
@@ -30,7 +39,7 @@ function PrivateRoute({ children, adminOnly = false }) {
     </div>
   )
   if (!user) return <Navigate to="/login" replace />
-  if (adminOnly && profile?.role !== 'admin') return <Navigate to="/operator" replace />
+  if (roles && !roles.includes(profile?.role)) return <Navigate to={homeForRole(profile?.role)} replace />
   return children
 }
 
@@ -44,10 +53,10 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={!user ? <LoginPage /> : <Navigate to={profile?.role === 'admin' ? '/admin' : '/operator'} />} />
+      <Route path="/login" element={!user ? <LoginPage /> : <Navigate to={homeForRole(profile?.role)} />} />
 
       {/* Admin routes */}
-      <Route path="/admin" element={<PrivateRoute adminOnly><AdminLayout /></PrivateRoute>}>
+      <Route path="/admin" element={<PrivateRoute roles={['admin']}><AdminLayout /></PrivateRoute>}>
         <Route index element={<Dashboard />} />
         <Route path="tours" element={<Tours />} />
         <Route path="upload" element={<UploadPDF />} />
@@ -63,16 +72,24 @@ export default function App() {
         <Route path="anomalies-reception" element={<AnomaliesReception />} />
         <Route path="anomalies-preparation" element={<AnomaliesPreparation />} />
         <Route path="email-recipients" element={<EmailRecipients />} />
+        <Route path="demandes" element={<Demandes />} />
         <Route path="scan/:tourId" element={<ScanPage />} />
       </Route>
 
       {/* Operator routes */}
-      <Route path="/operator" element={<PrivateRoute><OperatorLayout /></PrivateRoute>}>
+      <Route path="/operator" element={<PrivateRoute roles={['operator', 'admin']}><OperatorLayout /></PrivateRoute>}>
         <Route index element={<OperatorHome />} />
+        <Route path="demandes" element={<Demandes />} />
+        <Route path="search-parcel" element={<SearchParcel />} />
         <Route path="scan/:tourId" element={<ScanPage />} />
       </Route>
 
-      <Route path="*" element={<Navigate to={user ? (profile?.role === 'admin' ? '/admin' : '/operator') : '/login'} />} />
+      {/* Partner routes — accès restreint au suivi des tâches */}
+      <Route path="/partner" element={<PrivateRoute roles={['partner']}><PartnerLayout /></PrivateRoute>}>
+        <Route index element={<Demandes />} />
+      </Route>
+
+      <Route path="*" element={<Navigate to={user ? homeForRole(profile?.role) : '/login'} />} />
     </Routes>
   )
 }
