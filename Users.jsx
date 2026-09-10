@@ -150,6 +150,7 @@ export default function Users() {
                         >
                           <option value="operator">Opérateur</option>
                           <option value="admin">Administrateur</option>
+                          <option value="partner">Partenaire</option>
                         </select>
                       </td>
                       <td>
@@ -225,6 +226,7 @@ export default function Users() {
                   >
                     <option value="operator">Opérateur</option>
                     <option value="admin">Administrateur</option>
+                    <option value="partner">Partenaire</option>
                   </select>
                 </div>
 
