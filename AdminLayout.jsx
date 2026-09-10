@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import {
-  LayoutDashboard, Truck, Upload, Users, Search, FileSearch, RotateCcw, LogOut, Menu, X, BookMarked, ClipboardList, Map, Activity, ShieldAlert, MailIcon, PackageX, ClipboardCheck
+  LayoutDashboard, Truck, Upload, Users, Search, FileSearch, RotateCcw, LogOut, Menu, X, BookMarked, ClipboardList, Map, Activity, ShieldAlert, MailIcon, PackageX, ClipboardCheck, MessageSquarePlus
 } from 'lucide-react'
 
 const navPilotage = [
@@ -10,6 +10,7 @@ const navPilotage = [
   { to: '/admin/preparation-tournees', label: 'Préparation des tournées', icon: <ClipboardList size={16} /> },
   { to: '/admin/warehouse', label: 'Plan entrepôt', icon: <Map size={16} /> },
   { to: '/admin/suivi-tournees', label: 'Suivi des tournées', icon: <Activity size={16} /> },
+  { to: '/admin/demandes', label: 'Demandes', icon: <MessageSquarePlus size={16} /> },
   { to: '/admin/anomalies-reception', label: 'Anomalies réception', icon: <ShieldAlert size={16} /> },
   { to: '/admin/anomalies-preparation', label: 'Anomalies préparation', icon: <PackageX size={16} /> },
   { to: '/admin/reprises', label: 'Reprises', icon: <RotateCcw size={16} /> },
