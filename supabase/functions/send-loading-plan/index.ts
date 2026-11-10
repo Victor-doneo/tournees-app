@@ -1,7 +1,6 @@
 // Fonction Edge : envoie le PLAN DE CHARGEMENT aux destinataires actifs (table loading_plan_recipients).
 // Déploiement : supabase functions deploy send-loading-plan
-// Secrets requis : RESEND_API_KEY, MAIL_FROM (ex. "Superflash <plan@votre-domaine.fr>")
-// ⚠ Si votre fonction send-daily-report utilise un autre fournisseur d'envoi, adaptez uniquement le bloc « Envoi ».
+// Secrets utilisés : RESEND_API_KEY et FROM_EMAIL (les mêmes que send-daily-report, donc déjà configurés)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const cors = {
@@ -35,7 +34,7 @@ Deno.serve(async (req) => {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${Deno.env.get('RESEND_API_KEY')}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: Deno.env.get('MAIL_FROM'), to, subject, html }),
+      body: JSON.stringify({ from: `Superflash <${Deno.env.get('FROM_EMAIL') || 'onboarding@resend.dev'}>`, to, subject, html }),
     })
     if (!res.ok) return json({ error: 'Échec de l\'envoi : ' + (await res.text()) }, 502)
 
