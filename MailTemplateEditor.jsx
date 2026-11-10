@@ -6,12 +6,12 @@ import { useAuth } from './AuthContext'
 
 const SAMPLE_TABLE = `<table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:11pt"><tr><th style="border:1px solid #999;padding:4px 8px;background:#eee"></th><th style="border:1px solid #999;padding:4px 8px;background:#eee">QUAI 3</th><th style="border:1px solid #999;padding:4px 8px;background:#eee">QUAI 6</th></tr><tr><td style="border:1px solid #999;padding:4px 8px">05:30</td><td style="border:1px solid #999;padding:4px 8px">TGP9</td><td style="border:1px solid #999;padding:4px 8px">TKN1</td></tr></table>`
 
-export default function MailTemplateEditor() {
+export default function MailTemplateEditor({ tableHtml, isoDate, embedded = false }) {
   const { profile } = useAuth()
   const [t, setT] = useState(DEFAULT_TEMPLATE)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const sampleDate = new Date(Date.now() + 86400000).toLocaleDateString('en-CA')
+  const sampleDate = isoDate || new Date(Date.now() + 86400000).toLocaleDateString('en-CA')
 
   useEffect(() => {
     supabase.from('loading_plan_mail_template').select('subject, greeting, intro, signature').eq('id', 1).maybeSingle()
@@ -38,7 +38,7 @@ export default function MailTemplateEditor() {
   if (loading) return <div className="loading-center" style={{ padding: 32 }}><div className="spinner dark" /></div>
 
   return (
-    <div className="page-body" style={{ maxWidth: 760 }}>
+    <div className={embedded ? '' : 'page-body'} style={{ maxWidth: 760 }}>
       <div className="card" style={{ marginBottom: 20, overflow: 'hidden' }}>
         <div className="card-header"><span className="card-title">Modèle du mail</span></div>
         <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -72,7 +72,7 @@ export default function MailTemplateEditor() {
         <div className="card-header"><span className="card-title">Aperçu</span></div>
         <div className="card-body">
           <div style={{ fontSize: 13, marginBottom: 10 }}><b>Objet :</b> {renderSubject(t, sampleDate)}</div>
-          <div style={{ border: '1px solid var(--gray-200)', borderRadius: 6, padding: 12 }} dangerouslySetInnerHTML={{ __html: renderBody(t, sampleDate, SAMPLE_TABLE) }} />
+          <div style={{ border: '1px solid var(--gray-200)', borderRadius: 6, padding: 12 }} dangerouslySetInnerHTML={{ __html: renderBody(t, sampleDate, tableHtml || SAMPLE_TABLE) }} />
         </div>
       </div>
     </div>
