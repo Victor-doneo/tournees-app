@@ -1,0 +1,46 @@
+name: Import des heures Urbantz (10h30)
+on:
+  schedule:
+    - cron: '30 8 * * 1-6'   # 10h30 heure d'été (UTC+2)
+    - cron: '30 9 * * 1-6'   # 10h30 heure d'hiver (UTC+1) : le script ne travaille qu'à 10h, heure de Paris
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date visée (AAAA-MM-JJ), vide = prochain jour de livraison'
+        required: false
+      dry_run:
+        description: "Essai à blanc (n'écrit rien)"
+        type: boolean
+        default: false
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Installer les dépendances
+        run: |
+          mkdir work && cd work && npm init -y >/dev/null
+          npm i playwright@1.49.0 @supabase/supabase-js@2 >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+      - uses: actions/checkout@v4
+        with: { path: repo }
+      - name: Importer
+        working-directory: work
+        env:
+          URBANTZ_EMAIL: ${{ secrets.URBANTZ_EMAIL }}
+          URBANTZ_PASSWORD: ${{ secrets.URBANTZ_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATE: ${{ inputs.date }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+        run: node ../repo/scripts/urbantz-import.mjs
+      - name: Capture d'écran en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: urbantz-erreur
+          path: work/urbantz-erreur.png
+          if-no-files-found: ignore
