@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
 import { Plus, Trash2, Mail, ToggleLeft, ToggleRight } from 'lucide-react'
 import toast from 'react-hot-toast'
+import MailTemplateEditor from './MailTemplateEditor'
 
 const TABS = {
   rapport: { table: 'email_recipients', title: 'Rapport journalier', sub: 'Gérez les destinataires du rapport journalier automatique', hint: 'Le rapport est envoyé automatiquement chaque jour à 23h59.' },
   plan: { table: 'loading_plan_recipients', title: 'Plan de chargement', sub: 'Destinataires du mail PLAN DE CHARGEMENT/ CCV / ANTONY / JJ.MM.AAAA (envoi depuis la page « Plan de chargement »)', hint: 'Un mail par journée, envoyé manuellement via le bouton « Envoyer par mail ».' },
+  modele: { table: null, title: 'Modèle du mail du plan', sub: "Objet, texte d'introduction et signature du mail du plan de chargement", hint: '' },
 }
 
 export default function EmailRecipients({ only }) {
@@ -17,7 +19,7 @@ export default function EmailRecipients({ only }) {
   const [adding, setAdding] = useState(false)
   const [testing, setTesting] = useState(false)
 
-  useEffect(() => { fetchRecipients() }, [tab])
+  useEffect(() => { if (T.table) fetchRecipients() }, [tab])
 
   async function fetchRecipients() {
     setLoading(true)
@@ -94,7 +96,7 @@ export default function EmailRecipients({ only }) {
             <h2 className="page-title">Destinataires</h2>
             <p className="page-subtitle">{T.sub}</p>
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              {!only && Object.entries(TABS).map(([k, v]) => (
+              {Object.entries(TABS).filter(([k]) => !only || k === 'plan' || k === 'modele').map(([k, v]) => (
                 <button key={k} className={`btn btn-sm ${tab === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab(k)}>{v.title}</button>
               ))}
             </div>
@@ -110,7 +112,7 @@ export default function EmailRecipients({ only }) {
         </div>
       </div>
 
-      <div className="page-body" style={{ maxWidth: 560 }}>
+      {tab === 'modele' ? <MailTemplateEditor /> : <div className="page-body" style={{ maxWidth: 560 }}>
 
         {/* Formulaire ajout */}
         <div className="card" style={{ marginBottom: 20, overflow: 'hidden' }}>
@@ -196,7 +198,7 @@ export default function EmailRecipients({ only }) {
             ))
           )}
         </div>
-      </div>
+      </div>}
     </>
   )
 }

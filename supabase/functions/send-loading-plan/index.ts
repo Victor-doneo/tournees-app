@@ -22,10 +22,28 @@ Deno.serve(async (req) => {
     const allowed = profile?.role === 'admin' || (profile?.role === 'partner' && profile?.can_manage_loading_plan === true)
     if (!allowed) return json({ error: 'Accès non autorisé' }, 403)
 
-    const { delivery_date, html } = await req.json()
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(delivery_date || '') || !html) return json({ error: 'Paramètres invalides' }, 400)
+    const { delivery_date, table_html } = await req.json()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(delivery_date || '') || !table_html || !String(table_html).trim().startsWith('<table')) return json({ error: 'Paramètres invalides' }, 400)
+
+    // Modèle du mail (objet, formule d'appel, texte avant le tableau, signature) : table loading_plan_mail_template
+    const { data: tpl } = await admin.from('loading_plan_mail_template').select('*').eq('id', 1).maybeSingle()
+    const T = {
+      subject: tpl?.subject || 'PLAN DE CHARGEMENT/ CCV / ANTONY / {date}',
+      greeting: tpl?.greeting ?? 'Bonjour,',
+      intro: tpl?.intro ?? 'Plan de chargement CCV / Antony pour le {date_longue} :',
+      signature: tpl?.signature ?? 'Cordialement',
+    }
     const [y, m, d] = delivery_date.split('-')
-    const subject = `PLAN DE CHARGEMENT/ CCV / ANTONY / ${d}.${m}.${y}` // objet imposé
+    const vars: Record<string, string> = {
+      date: `${d}.${m}.${y}`,
+      date_longue: new Date(delivery_date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase(),
+    }
+    const fill = (txt: string, v: Record<string, string>) => String(txt || '').replace(/\{(date_longue|date)\}/g, (_, k) => v[k])
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const para = (txt: string) =>
+      `<p>${esc(fill(txt, { ...vars, date_longue: '\u0000' })).replace(/\u0000/g, `<b>${esc(vars.date_longue)}</b>`).replace(/\n/g, '<br>')}</p>`
+    const subject = fill(T.subject, vars)
+    const html = `<div style="font-family:Calibri,Arial,sans-serif;font-size:11pt">${para(T.greeting)}${para(T.intro)}${table_html}${para(T.signature)}</div>`
 
     const { data: recipients } = await admin.from('loading_plan_recipients').select('email').eq('active', true)
     const to = (recipients || []).map((r) => r.email)

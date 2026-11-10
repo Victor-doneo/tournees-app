@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import toast from 'react-hot-toast'
 import { LayoutGrid, Shuffle, Copy, RotateCcw, AlertTriangle, Send } from 'lucide-react'
+import { DEFAULT_TEMPLATE, renderSubject } from './mailTemplate'
 import { QUAIS, fmtMin, parseHM, distanceKm, generatePlan, shuffleQuais } from './chargementPlan'
 
 const ALL_SLOTS = Array.from({ length: 19 }, (_, i) => 330 + i * 30) // 05:30 -> 14:30
@@ -86,13 +87,12 @@ export default function PlanChargement() {
   const slots = [...new Set(plan.map(t => t.slot))].sort((a, b) => a - b)
   const cell = (s, q) => plan.filter(t => t.slot === s && t.quai === q)
 
-  // Corps du mail : date en toute lettre juste avant le tableau (comme dans les plans habituels)
-  function buildMailHtml() {
+  // Tableau créneaux × quais envoyé dans le mail (l'introduction et la signature viennent du modèle, côté serveur)
+  function buildTableHtml() {
     const head = ['', ...QUAIS.map(q => `QUAI ${q}`)]
     const lines = slots.map(s => [fmtMin(s), ...QUAIS.map(q => cell(s, q).map(t => t.name).join(' / '))])
     const th = 'style="border:1px solid #999;padding:4px 8px;background:#eee"', td = 'style="border:1px solid #999;padding:4px 8px"'
-    const long = new Date(date.delivery_date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase()
-    return `<div style="font-family:Calibri,Arial,sans-serif;font-size:11pt"><p>Bonjour,</p><p>Plan de chargement CCV / Antony pour le <b>${long}</b> :</p><table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:11pt"><tr>${head.map(h => `<th ${th}>${h}</th>`).join('')}</tr>${lines.map(r => `<tr>${r.map(c => `<td ${td}>${c}</td>`).join('')}</tr>`).join('')}</table><p>Cordialement</p></div>`
+    return `<table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:11pt"><tr>${head.map(h => `<th ${th}>${h}</th>`).join('')}</tr>${lines.map(r => `<tr>${r.map(c => `<td ${td}>${c}</td>`).join('')}</tr>`).join('')}</table>`
   }
 
   async function sendMail() {
@@ -102,12 +102,13 @@ export default function PlanChargement() {
       setSending(true)
       const { data: prev } = await supabase.from('loading_plan_sends').select('sent_at').eq('delivery_date', date.delivery_date).order('sent_at', { ascending: false }).limit(1)
       const warn = prev?.length ? `\n\nAttention : un plan a déjà été envoyé pour cette journée le ${new Date(prev[0].sent_at).toLocaleString('fr-FR')}.` : ''
-      if (!confirm(`Envoyer le plan de chargement du ${d}.${m}.${y} aux destinataires actifs ?\nObjet : PLAN DE CHARGEMENT/ CCV / ANTONY / ${d}.${m}.${y}${warn}`)) return
+      const { data: tpl } = await supabase.from('loading_plan_mail_template').select('subject, greeting, intro, signature').eq('id', 1).maybeSingle()
+      if (!confirm(`Envoyer le plan de chargement du ${d}.${m}.${y} aux destinataires actifs ?\nObjet : ${renderSubject(tpl || DEFAULT_TEMPLATE, date.delivery_date)}${warn}`)) return
       const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-loading-plan`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ delivery_date: date.delivery_date, html: buildMailHtml() }),
+        body: JSON.stringify({ delivery_date: date.delivery_date, table_html: buildTableHtml() }),
       })
       const out = await res.json().catch(() => ({}))
       if (res.ok) toast.success(`Plan envoyé à ${out.sent_to} destinataire(s)`)
