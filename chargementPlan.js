@@ -1,11 +1,20 @@
 // Plan de chargement : règle de priorité
-//   1) heure de première livraison (la plus tôt d'abord)
+//   1) heure de première arrivée prévue dans Urbantz (« eta », à la minute) quand elle est importée,
+//      sinon heure de première livraison du PDF (la plus tôt d'abord)
 //   2) éloignement d'Antony (92160) du code postal de la première livraison (le plus lointain d'abord) :
 //      - mode « temps » (par défaut) : temps de trajet estimé, calibré sur les trajets réels d'Urbantz
 //      - mode « distance » : distance à vol d'oiseau
 //      une LV1 (chauffeur seul, chargement plus long) compte pour « lv1Min » minutes (ou « lv1Km » km) de plus
 //   3) capacité : 9 quais par créneau ; au-delà, la tournée passe au créneau suivant
 // Les quais sont placés au hasard dans chaque créneau.
+// Les créneaux de chargement autorisés restent ceux de l'heure du PDF (SLOT_RULES) ; l'arrivée Urbantz sert à l'ordre.
+
+// Code de tournée d'un nom de tournée Urbantz, ex. « TA830camionMNS75 L… » -> « MNS75 » (le code le plus long contenu dans le nom)
+export function matchRoundCode(roundName, codes) {
+  const n = String(roundName || '').toUpperCase().replace(/^TA830CAMION/, '')
+  return [...codes].sort((a, b) => b.length - a.length)
+    .find(c => { const i = n.indexOf(String(c).toUpperCase()); return i >= 0 && !/\d/.test(n[i + String(c).length] || '') }) || null
+}
 
 export const QUAIS = [3, 6, 7, 8, 9, 10, 11, 12, 13]
 export const SITE_CP = '92160' // Antony
@@ -98,7 +107,8 @@ export function generatePlan(tours, { mode = 'time', lv1Km = 5, lv1Min = 10, cap
     slot: null,
     overflow: false,
   }))
-  const prio = (a, b) => (a.hpl ?? 9999) - (b.hpl ?? 9999) || b.score - a.score || a.name.localeCompare(b.name)
+  const ref = x => x.eta ?? x.hpl ?? 9999 // référence : arrivée prévue Urbantz, à défaut heure du PDF
+  const prio = (a, b) => ref(a) - ref(b) || b.score - a.score || a.name.localeCompare(b.name)
   t.sort(prio)
 
   const count = {}

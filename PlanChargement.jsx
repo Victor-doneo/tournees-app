@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import toast from 'react-hot-toast'
-import { LayoutGrid, Shuffle, Copy, RotateCcw, AlertTriangle, Send } from 'lucide-react'
+import { LayoutGrid, Shuffle, Copy, RotateCcw, AlertTriangle, Send, Upload } from 'lucide-react'
 import { DEFAULT_TEMPLATE, renderSubject } from './mailTemplate'
-import { QUAIS, fmtMin, parseHM, distanceKm, travelMinutes, generatePlan, shuffleQuais } from './chargementPlan'
+import { matchRoundCode, QUAIS, fmtMin, parseHM, distanceKm, travelMinutes, generatePlan, shuffleQuais } from './chargementPlan'
 
 const ALL_SLOTS = Array.from({ length: 19 }, (_, i) => 330 + i * 30) // 05:30 -> 14:30
 const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -46,10 +46,11 @@ export default function PlanChargement() {
 
   async function loadTours(d) {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('tours')
-      .select('id, name, type_livraison, heure_premiere_livraison, code_postal_premiere_livraison, total_parcels, tours_references(name)')
-      .eq('delivery_date_id', d.id)
+    const base = 'id, name, type_livraison, heure_premiere_livraison, code_postal_premiere_livraison, total_parcels, tours_references(name)'
+    let { data, error } = await supabase.from('tours').select(base + ', urbantz_first_arrival, urbantz_hub_depart').eq('delivery_date_id', d.id)
+    if (error) { // colonnes Urbantz pas encore créées (migration non lancée) : on charge sans elles
+      ;({ data, error } = await supabase.from('tours').select(base).eq('delivery_date_id', d.id))
+    }
     if (error) toast.error('Erreur : ' + error.message)
     setRows(data || [])
     setLoading(false)
@@ -65,6 +66,8 @@ export default function PlanChargement() {
       id: r.id,
       name: r.tours_references?.name || r.name,
       hpl,
+      eta: parseHM(r.urbantz_first_arrival),
+      hubDepart: parseHM(r.urbantz_hub_depart),
       lv1: r.type_livraison === 'LV1',
       type: r.type_livraison,
       cp: r.code_postal_premiere_livraison,
@@ -76,6 +79,25 @@ export default function PlanChargement() {
 
   // recalcul du plan quand les données ou les réglages changent
   useEffect(() => { setPlan(tours.length ? generatePlan(tours, { mode, lv1Km, lv1Min, capacity: Math.min(capacity, QUAIS.length), seed }) : []) }, [tours, mode, lv1Km, lv1Min, capacity])
+
+  // Import du fichier d'heures Urbantz : { date, rounds: [{ name, hub, first }] } -> tournées de la journée choisie
+  async function importUrbantz(e) {
+    const file = e.target.files?.[0]; e.target.value = ''
+    if (!file || !date) return
+    try {
+      const j = JSON.parse(await file.text())
+      if (j.date && j.date !== date.delivery_date) return toast.error(`Ce fichier est daté du ${j.date}, la journée choisie est le ${date.delivery_date}.`)
+      const codes = rows.map(r => r.tours_references?.name || r.name)
+      const byCode = {}
+      for (const r of j.rounds || []) { const c = matchRoundCode(r.name, codes); if (c && r.first) byCode[c] = r }
+      const upd = rows.map(r => { const u = byCode[r.tours_references?.name || r.name]; return u ? { id: r.id, first: u.first, hub: u.hub || '' } : null }).filter(Boolean)
+      if (!upd.length) return toast.error('Aucune tournée du fichier ne correspond à cette journée.')
+      const { data, error } = await supabase.rpc('set_urbantz_times', { p_date: date.delivery_date, p_rows: upd })
+      if (error) return toast.error('Erreur : ' + error.message)
+      toast.success(`${data} tournée(s) mises à jour avec les heures Urbantz (${rows.length - data} sans heure)`)
+      loadTours(date)
+    } catch (err) { toast.error('Fichier illisible : ' + err.message) }
+  }
 
   function reshuffleQuais() {
     const s = seed + 1
@@ -139,12 +161,13 @@ export default function PlanChargement() {
 
   const unknownDist = tours.filter(t => t.dist == null).length
   const unknownHpl = tours.filter(t => t.hpl == null).length
+  const missingEta = tours.length - tours.filter(t => t.eta != null).length
 
   return (
     <>
       <div className="page-header">
         <h2 className="page-title">Plan de chargement</h2>
-        <p className="page-subtitle">Proposition automatique : heure de première livraison, puis temps de trajet estimé depuis Antony (calibré sur les trajets réels Urbantz) ou distance, LV1 comptée comme plus loin. Quais placés au hasard.</p>
+        <p className="page-subtitle">Proposition automatique : heure d'arrivée prévue dans Urbantz (à défaut, heure de première livraison du PDF), puis temps de trajet estimé depuis Antony (calibré sur les trajets réels Urbantz) ou distance, LV1 comptée comme plus loin. Quais placés au hasard.</p>
       </div>
 
       <div className="page-body">
@@ -173,9 +196,21 @@ export default function PlanChargement() {
           </label>
           <button className="btn btn-secondary btn-sm" onClick={reshuffleQuais}><Shuffle size={14} /> Mélanger les quais</button>
           <button className="btn btn-secondary btn-sm" onClick={() => { setSeed(s => s + 1); setPlan(generatePlan(tours, { mode, lv1Km, lv1Min, capacity: Math.min(capacity, QUAIS.length), seed: seed + 1 })) }}><RotateCcw size={14} /> Recalculer</button>
+          <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }} title="Fichier d'heures d'arrivée prévues relevées dans Urbantz">
+            <Upload size={14} /> Importer les heures Urbantz
+            <input type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={importUrbantz} />
+          </label>
           <button className="btn btn-primary btn-sm" onClick={copyTable} disabled={!plan.length}><Copy size={14} /> Copier le tableau</button>
           <button className="btn btn-primary btn-sm" onClick={sendMail} disabled={!plan.length || sending}>{sending ? <><div className="spinner" /> Envoi...</> : <><Send size={14} /> Envoyer par mail</>}</button>
         </div>
+
+        {tours.length > 0 && (
+          <div style={{ fontSize: 13, marginBottom: 10, color: missingEta ? 'var(--orange)' : 'var(--green)' }}>
+            {missingEta === tours.length ? "Aucune heure d'arrivée Urbantz importée : le plan utilise l'heure de première livraison du PDF."
+              : missingEta ? `Heures Urbantz importées pour ${tours.length - missingEta} tournée(s) sur ${tours.length} (les autres utilisent l'heure du PDF).`
+              : `Plan basé sur les heures d'arrivée prévues dans Urbantz (${tours.length} tournées).`}
+          </div>
+        )}
 
         {(unknownDist > 0 || unknownHpl > 0) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--orange)', marginBottom: 12 }}>
@@ -223,12 +258,13 @@ export default function PlanChargement() {
             <div className="card">
               <div className="table-wrapper">
                 <table>
-                  <thead><tr><th>Tournée</th><th>1re livraison</th><th>Code postal</th><th>Distance</th><th>Trajet estimé</th><th>Type</th><th>Colis</th><th>Créneau</th><th>Quai</th></tr></thead>
+                  <thead><tr><th>Tournée</th><th>1re livraison</th><th>Arrivée Urbantz</th><th>Code postal</th><th>Distance</th><th>Trajet estimé</th><th>Type</th><th>Colis</th><th>Créneau</th><th>Quai</th></tr></thead>
                   <tbody>
                     {plan.map(t => (
                       <tr key={t.id}>
                         <td style={{ fontWeight: 600 }}>{t.name}{t.overflow && <span className="badge badge-orange" style={{ marginLeft: 6 }} title="Créneaux habituels complets">report</span>}</td>
                         <td>{t.hpl != null ? fmtMin(t.hpl) : '—'}</td>
+                        <td style={{ fontWeight: t.eta != null ? 600 : 400 }}>{t.eta != null ? fmtMin(t.eta) : '—'}</td>
                         <td>{t.cp || '—'}</td>
                         <td>{t.dist != null ? `${Math.round(t.dist)} km` : '—'}</td>
                         <td>{t.trip != null ? `~${Math.round(t.trip)} min` : '—'}</td>
