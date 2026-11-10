@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
+        with: { node-version: 22 }
       - name: Installer les dépendances
         run: |
           mkdir work && cd work && npm init -y >/dev/null
