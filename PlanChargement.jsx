@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import toast from 'react-hot-toast'
-import { LayoutGrid, Shuffle, Copy, RotateCcw, AlertTriangle, Send, FileText } from 'lucide-react'
+import { LayoutGrid, Shuffle, Copy, RotateCcw, AlertTriangle, Send } from 'lucide-react'
 import { DEFAULT_TEMPLATE, renderSubject } from './mailTemplate'
-import MailTemplateEditor from './MailTemplateEditor'
 import { QUAIS, fmtMin, parseHM, distanceKm, travelMinutes, generatePlan, shuffleQuais } from './chargementPlan'
 
 const ALL_SLOTS = Array.from({ length: 19 }, (_, i) => 330 + i * 30) // 05:30 -> 14:30
@@ -22,7 +21,6 @@ export default function PlanChargement() {
   const [seed, setSeed] = useState(1)
   const [plan, setPlan] = useState([])
   const [sending, setSending] = useState(false)
-  const [showTemplate, setShowTemplate] = useState(false)
 
   // coordonnées des codes postaux : fichier chargé à la demande (pas dans le bundle principal)
   useEffect(() => { import('./cpCoords.json').then(m => setCoords(m.default)) }, [])
@@ -177,14 +175,7 @@ export default function PlanChargement() {
           <button className="btn btn-secondary btn-sm" onClick={() => { setSeed(s => s + 1); setPlan(generatePlan(tours, { mode, lv1Km, lv1Min, capacity: Math.min(capacity, QUAIS.length), seed: seed + 1 })) }}><RotateCcw size={14} /> Recalculer</button>
           <button className="btn btn-primary btn-sm" onClick={copyTable} disabled={!plan.length}><Copy size={14} /> Copier le tableau</button>
           <button className="btn btn-primary btn-sm" onClick={sendMail} disabled={!plan.length || sending}>{sending ? <><div className="spinner" /> Envoi...</> : <><Send size={14} /> Envoyer par mail</>}</button>
-          <button className="btn btn-secondary btn-sm" onClick={() => setShowTemplate(v => !v)}><FileText size={14} /> {showTemplate ? 'Masquer le modèle du mail' : 'Modèle du mail'}</button>
         </div>
-
-        {showTemplate && date && (
-          <div style={{ marginBottom: 20 }}>
-            <MailTemplateEditor embedded isoDate={date.delivery_date} tableHtml={plan.length ? buildTableHtml() : undefined} />
-          </div>
-        )}
 
         {(unknownDist > 0 || unknownHpl > 0) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--orange)', marginBottom: 12 }}>

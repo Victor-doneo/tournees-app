@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
-import { Plus, Trash2, Mail, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Plus, Trash2, Mail, ToggleLeft, ToggleRight, FileText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import MailTemplateEditor from './MailTemplateEditor'
 
 const TABS = {
   rapport: { table: 'email_recipients', title: 'Rapport journalier', sub: 'Gérez les destinataires du rapport journalier automatique', hint: 'Le rapport est envoyé automatiquement chaque jour à 23h59.' },
   plan: { table: 'loading_plan_recipients', title: 'Plan de chargement', sub: 'Destinataires du mail PLAN DE CHARGEMENT/ CCV / ANTONY / JJ.MM.AAAA (envoi depuis la page « Plan de chargement »)', hint: 'Un mail par journée, envoyé manuellement via le bouton « Envoyer par mail ».' },
-  modele: { table: null, title: 'Modèle du mail du plan', sub: "Objet, texte d'introduction et signature du mail du plan de chargement", hint: '' },
 }
 
 export default function EmailRecipients({ only }) {
@@ -18,6 +17,7 @@ export default function EmailRecipients({ only }) {
   const [form, setForm] = useState({ email: '', full_name: '' })
   const [adding, setAdding] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [showModele, setShowModele] = useState(false)
 
   useEffect(() => { if (T.table) fetchRecipients() }, [tab])
 
@@ -96,11 +96,16 @@ export default function EmailRecipients({ only }) {
             <h2 className="page-title">Gestion mailing</h2>
             <p className="page-subtitle">{T.sub}</p>
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              {Object.entries(TABS).filter(([k]) => !only || k === 'plan' || k === 'modele').map(([k, v]) => (
+              {Object.entries(TABS).filter(([k]) => !only || k === 'plan').map(([k, v]) => (
                 <button key={k} className={`btn btn-sm ${tab === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab(k)}>{v.title}</button>
               ))}
             </div>
           </div>
+          {tab === 'plan' && (
+            <button className={`btn btn-sm ${showModele ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setShowModele(v => !v)} style={{ paddingTop: 4 }}>
+              <FileText size={14} /> Modèle de mail
+            </button>
+          )}
           {tab === 'rapport' && <button
             className="btn btn-secondary btn-sm"
             onClick={testEmail}
@@ -112,7 +117,10 @@ export default function EmailRecipients({ only }) {
         </div>
       </div>
 
-      {tab === 'modele' ? <MailTemplateEditor /> : <div className="page-body" style={{ maxWidth: 560 }}>
+      <div className="page-body" style={{ maxWidth: showModele && tab === 'plan' ? 760 : 560 }}>
+        {tab === 'plan' && showModele && (
+          <div style={{ marginBottom: 20 }}><MailTemplateEditor embedded /></div>
+        )}
 
         {/* Formulaire ajout */}
         <div className="card" style={{ marginBottom: 20, overflow: 'hidden' }}>
@@ -198,7 +206,7 @@ export default function EmailRecipients({ only }) {
             ))
           )}
         </div>
-      </div>}
+      </div>
     </>
   )
 }
