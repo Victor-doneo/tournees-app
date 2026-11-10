@@ -69,7 +69,7 @@ export default function PlanChargement() {
       type: r.type_livraison,
       cp: r.code_postal_premiere_livraison,
       dist,
-      trip: travelMinutes(dist, cp, hpl),
+      trip: travelMinutes(dist, cp ? coords[cp] : null, hpl),
       colis: r.total_parcels,
     }})
   }, [rows, coords])
@@ -144,7 +144,7 @@ export default function PlanChargement() {
     <>
       <div className="page-header">
         <h2 className="page-title">Plan de chargement</h2>
-        <p className="page-subtitle">Proposition automatique : heure de première livraison, puis temps de trajet estimé depuis Antony avec le trafic moyen de l'heure (ou distance), LV1 comptée comme plus loin. Quais placés au hasard.</p>
+        <p className="page-subtitle">Proposition automatique : heure de première livraison, puis temps de trajet estimé depuis Antony (calibré sur les trajets réels Urbantz) ou distance, LV1 comptée comme plus loin. Quais placés au hasard.</p>
       </div>
 
       <div className="page-body">
@@ -153,7 +153,7 @@ export default function PlanChargement() {
             {dates.map(d => <option key={d.id} value={d.id}>{fmtDate(d.delivery_date)}</option>)}
           </select>
           <select className="form-input" style={{ maxWidth: 230 }} value={mode} onChange={e => setMode(e.target.value)} title="Critère de tri après l'heure de première livraison">
-            <option value="time">Temps de trajet (trafic moyen)</option>
+            <option value="time">Temps de trajet estimé</option>
             <option value="distance">Distance à vol d'oiseau</option>
           </select>
           {mode === 'time' ? (

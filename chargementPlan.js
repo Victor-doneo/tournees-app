@@ -1,7 +1,7 @@
 // Plan de chargement : règle de priorité
 //   1) heure de première livraison (la plus tôt d'abord)
 //   2) éloignement d'Antony (92160) du code postal de la première livraison (le plus lointain d'abord) :
-//      - mode « temps » (par défaut) : temps de trajet estimé avec le trafic moyen de l'heure du trajet
+//      - mode « temps » (par défaut) : temps de trajet estimé, calibré sur les trajets réels d'Urbantz
 //      - mode « distance » : distance à vol d'oiseau
 //      une LV1 (chauffeur seul, chargement plus long) compte pour « lv1Min » minutes (ou « lv1Km » km) de plus
 //   3) capacité : 9 quais par créneau ; au-delà, la tournée passe au créneau suivant
@@ -26,41 +26,34 @@ export const parseHM = s => {
   return m ? Number(m[1]) * 60 + Number(m[2]) : null
 }
 
-// ── Temps de trajet estimé selon le trafic moyen ────────────────────────────────────────────
-// Modèle simple et réglable (pas de données de trafic en direct) :
-//   durée = distance à vol d'oiseau / vitesse fluide de la zone × (1 + amplitude de la zone × congestion de l'heure)
-// Zones d'après le département du code postal ; vitesses « à vol d'oiseau » (le détour des routes est inclus).
+// ── Temps de trajet estimé ──────────────────────────────────────────────────────────────────
+// Calibré sur 553 tournées réelles relevées dans Urbantz (5 octobre → 9 novembre 2026) : trajet entre le départ
+// de l'entrepôt et la 1re livraison = durée fixe + minutes par km (à vol d'oiseau), selon la zone de destination.
+// Erreur moyenne : 3,7 min (contre 12 min pour l'ancien modèle de vitesses et 8,7 min pour une durée constante).
 export const ZONES = {
-  paris:  { speed: 24, amp: 0.8 },   // 75
-  petite: { speed: 32, amp: 0.7 },   // 92, 93, 94
-  grande: { speed: 48, amp: 0.6 },   // 77, 78, 91, 95
-  loin:   { speed: 70, amp: 0.4 },   // autres départements
+  paris:  { fixed: 0.8,  perKm: 2.68 },   // ≤ 6,5 km du centre de Paris
+  petite: { fixed: 9.8,  perKm: 1.73 },   // 6,5 – 17 km du centre de Paris
+  grande: { fixed: 10.5, perKm: 1.25 },   // au-delà (aussi utilisé pour les destinations lointaines, peu observées)
 }
-// Congestion moyenne par heure (0 = fluide, 1 = heure de pointe) en Île-de-France, jours ouvrés
-export const TRAFFIC_PROFILE = {
-  0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0.05, 6: 0.35, 7: 0.85, 8: 1, 9: 0.7, 10: 0.35, 11: 0.2, 12: 0.25,
-  13: 0.2, 14: 0.25, 15: 0.4, 16: 0.75, 17: 1, 18: 0.9, 19: 0.45, 20: 0.15, 21: 0.05, 22: 0, 23: 0,
+// Effet de l'heure d'arrivée sur le trajet (médiane observée, ±10 % : le trafic pèse peu sur ces créneaux matinaux)
+export const HOUR_FACTOR = { 5: 0.96, 6: 0.96, 7: 0.98, 8: 1.03, 9: 1.02, 10: 0.95, 11: 0.9, 12: 0.97, 13: 1.0, 14: 1.08, 15: 1.12, 16: 1.12 }
+const PARIS = [48.8566, 2.3522]
+const kmBetween = (a, b) => {
+  const p = Math.PI / 180, h = Math.sin(((b[0] - a[0]) * p) / 2) ** 2 + Math.cos(a[0] * p) * Math.cos(b[0] * p) * Math.sin(((b[1] - a[1]) * p) / 2) ** 2
+  return 2 * 6371 * Math.asin(Math.sqrt(h))
 }
-export function zoneOf(cp) {
-  const d = String(cp || '').padStart(5, '0').slice(0, 2)
-  if (d === '75') return 'paris'
-  if (['92', '93', '94'].includes(d)) return 'petite'
-  if (['77', '78', '91', '95'].includes(d)) return 'grande'
-  return 'loin'
+// zone d'après les coordonnées [lat, lon] du code postal de destination
+export function zoneOf(latlon) {
+  if (!latlon) return 'petite'
+  const d = kmBetween(PARIS, latlon)
+  return d <= 6.5 ? 'paris' : d <= 17 ? 'petite' : 'grande'
 }
-const congestion = minutes => { // interpolation linéaire entre heures pleines
-  const m = ((minutes % 1440) + 1440) % 1440, h = Math.floor(m / 60), f = (m % 60) / 60
-  return TRAFFIC_PROFILE[h] * (1 - f) + TRAFFIC_PROFILE[(h + 1) % 24] * f
-}
-// Minutes de trajet pour arriver à la 1re livraison à l'heure « hpl » (minutes depuis minuit) ; trafic pris au milieu du trajet
-export function travelMinutes(distKm, cp, hpl) {
+// Minutes de trajet vers la 1re livraison (heure « hpl » en minutes depuis minuit) ; null si distance inconnue
+export function travelMinutes(distKm, latlon, hpl) {
   if (distKm == null) return null
-  const z = ZONES[zoneOf(cp)]
-  const free = (distKm / z.speed) * 60
-  if (hpl == null) return free * (1 + z.amp * 0.3)
-  let t = free
-  for (let i = 0; i < 4; i++) t = free * (1 + z.amp * congestion(hpl - t / 2))
-  return t
+  const z = ZONES[zoneOf(latlon)]
+  const f = hpl == null ? 1 : (HOUR_FACTOR[Math.min(16, Math.max(5, Math.floor(hpl / 60)))] ?? 1)
+  return (z.fixed + z.perKm * distKm) * f
 }
 
 export function distanceKm(coords, cp) {
