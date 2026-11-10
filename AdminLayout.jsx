@@ -46,7 +46,7 @@ const navSections = [
   {
     label: 'Administratif',
     items: [
-      { to: '/admin/email-recipients', label: 'Destinataires rapport', icon: <MailIcon size={16} /> },
+      { to: '/admin/email-recipients', label: 'Destinataires mails', icon: <MailIcon size={16} /> },
       { to: '/admin/users', label: 'Utilisateurs', icon: <Users size={16} /> },
       { to: '/admin/reference-tours', label: 'Tournées de référence', icon: <BookMarked size={16} /> },
     ],

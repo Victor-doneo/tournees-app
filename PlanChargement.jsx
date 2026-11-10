@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import toast from 'react-hot-toast'
-import { LayoutGrid, Shuffle, Copy, RotateCcw, AlertTriangle } from 'lucide-react'
+import { LayoutGrid, Shuffle, Copy, RotateCcw, AlertTriangle, Send } from 'lucide-react'
 import { QUAIS, fmtMin, parseHM, distanceKm, generatePlan, shuffleQuais } from './chargementPlan'
 
 const ALL_SLOTS = Array.from({ length: 19 }, (_, i) => 330 + i * 30) // 05:30 -> 14:30
@@ -17,6 +17,7 @@ export default function PlanChargement() {
   const [capacity, setCapacity] = useState(9)
   const [seed, setSeed] = useState(1)
   const [plan, setPlan] = useState([])
+  const [sending, setSending] = useState(false)
 
   // coordonnées des codes postaux : fichier chargé à la demande (pas dans le bundle principal)
   useEffect(() => { import('./cpCoords.json').then(m => setCoords(m.default)) }, [])
@@ -26,8 +27,13 @@ export default function PlanChargement() {
       .then(({ data, error }) => {
         if (error) { toast.error('Erreur : ' + error.message); setLoading(false); return }
         setDates(data || [])
-        const today = new Date().toLocaleDateString('en-CA')
-        const next = [...(data || [])].reverse().find(d => d.delivery_date >= today) || data?.[0]
+        // Après midi, on prépare le lendemain : on prend la prochaine journée APRÈS aujourd'hui ;
+        // le matin, on garde la journée du jour. À défaut, la plus récente.
+        const now = new Date()
+        const today = now.toLocaleDateString('en-CA')
+        const asc = [...(data || [])].reverse()
+        const next = (now.getHours() >= 12 ? asc.find(d => d.delivery_date > today) : null)
+          || asc.find(d => d.delivery_date >= today) || data?.[0]
         if (next) setDate(next)
         else setLoading(false)
       })
@@ -80,6 +86,35 @@ export default function PlanChargement() {
   const slots = [...new Set(plan.map(t => t.slot))].sort((a, b) => a - b)
   const cell = (s, q) => plan.filter(t => t.slot === s && t.quai === q)
 
+  // Corps du mail : date en toute lettre juste avant le tableau (comme dans les plans habituels)
+  function buildMailHtml() {
+    const head = ['', ...QUAIS.map(q => `QUAI ${q}`)]
+    const lines = slots.map(s => [fmtMin(s), ...QUAIS.map(q => cell(s, q).map(t => t.name).join(' / '))])
+    const th = 'style="border:1px solid #999;padding:4px 8px;background:#eee"', td = 'style="border:1px solid #999;padding:4px 8px"'
+    const long = new Date(date.delivery_date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase()
+    return `<div style="font-family:Calibri,Arial,sans-serif;font-size:11pt"><p>Bonjour,</p><p>Plan de chargement CCV / Antony pour le <b>${long}</b> :</p><table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:11pt"><tr>${head.map(h => `<th ${th}>${h}</th>`).join('')}</tr>${lines.map(r => `<tr>${r.map(c => `<td ${td}>${c}</td>`).join('')}</tr>`).join('')}</table><p>Cordialement</p></div>`
+  }
+
+  async function sendMail() {
+    if (!date || !plan.length) return
+    const [y, m, d] = date.delivery_date.split('-')
+    try {
+      setSending(true)
+      const { data: prev } = await supabase.from('loading_plan_sends').select('sent_at').eq('delivery_date', date.delivery_date).order('sent_at', { ascending: false }).limit(1)
+      const warn = prev?.length ? `\n\nAttention : un plan a déjà été envoyé pour cette journée le ${new Date(prev[0].sent_at).toLocaleString('fr-FR')}.` : ''
+      if (!confirm(`Envoyer le plan de chargement du ${d}.${m}.${y} aux destinataires actifs ?\nObjet : PLAN DE CHARGEMENT/ CCV / ANTONY / ${d}.${m}.${y}${warn}`)) return
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-loading-plan`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delivery_date: date.delivery_date, html: buildMailHtml() }),
+      })
+      const out = await res.json().catch(() => ({}))
+      if (res.ok) toast.success(`Plan envoyé à ${out.sent_to} destinataire(s)`)
+      else toast.error(out.error || 'Envoi impossible')
+    } catch (e) { toast.error('Erreur : ' + e.message) } finally { setSending(false) }
+  }
+
   async function copyTable() {
     const head = ['', ...QUAIS.map(q => `QUAI ${q}`)]
     const lines = slots.map(s => [fmtMin(s), ...QUAIS.map(q => cell(s, q).map(t => t.name).join(' / '))])
@@ -120,6 +155,7 @@ export default function PlanChargement() {
           <button className="btn btn-secondary btn-sm" onClick={reshuffleQuais}><Shuffle size={14} /> Mélanger les quais</button>
           <button className="btn btn-secondary btn-sm" onClick={() => { setSeed(s => s + 1); setPlan(generatePlan(tours, { lv1Km, capacity: Math.min(capacity, QUAIS.length), seed: seed + 1 })) }}><RotateCcw size={14} /> Recalculer</button>
           <button className="btn btn-primary btn-sm" onClick={copyTable} disabled={!plan.length}><Copy size={14} /> Copier le tableau</button>
+          <button className="btn btn-primary btn-sm" onClick={sendMail} disabled={!plan.length || sending}>{sending ? <><div className="spinner" /> Envoi...</> : <><Send size={14} /> Envoyer par mail</>}</button>
         </div>
 
         {(unknownDist > 0 || unknownHpl > 0) && (

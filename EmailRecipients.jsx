@@ -3,19 +3,26 @@ import { supabase } from './supabase'
 import { Plus, Trash2, Mail, ToggleLeft, ToggleRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 
+const TABS = {
+  rapport: { table: 'email_recipients', title: 'Rapport journalier', sub: 'Gérez les destinataires du rapport journalier automatique', hint: 'Le rapport est envoyé automatiquement chaque jour à 23h59.' },
+  plan: { table: 'loading_plan_recipients', title: 'Plan de chargement', sub: 'Destinataires du mail PLAN DE CHARGEMENT/ CCV / ANTONY / JJ.MM.AAAA (envoi depuis la page « Plan de chargement »)', hint: 'Un mail par journée, envoyé manuellement via le bouton « Envoyer par mail ».' },
+}
+
 export default function EmailRecipients() {
+  const [tab, setTab] = useState('rapport')
+  const T = TABS[tab]
   const [recipients, setRecipients] = useState([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({ email: '', full_name: '' })
   const [adding, setAdding] = useState(false)
   const [testing, setTesting] = useState(false)
 
-  useEffect(() => { fetchRecipients() }, [])
+  useEffect(() => { fetchRecipients() }, [tab])
 
   async function fetchRecipients() {
     setLoading(true)
     const { data } = await supabase
-      .from('email_recipients')
+      .from(T.table)
       .select('*')
       .order('created_at')
     setRecipients(data || [])
@@ -26,7 +33,7 @@ export default function EmailRecipients() {
     if (!form.email.trim()) return toast.error('Saisissez un email.')
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return toast.error('Email invalide.')
     setAdding(true)
-    const { error } = await supabase.from('email_recipients').insert({
+    const { error } = await supabase.from(T.table).insert({
       email: form.email.trim().toLowerCase(),
       full_name: form.full_name.trim() || null,
     })
@@ -42,7 +49,7 @@ export default function EmailRecipients() {
 
   async function toggleActive(r) {
     const { error } = await supabase
-      .from('email_recipients')
+      .from(T.table)
       .update({ active: !r.active })
       .eq('id', r.id)
     if (error) toast.error('Erreur')
@@ -51,7 +58,7 @@ export default function EmailRecipients() {
 
   async function handleDelete(id, email) {
     if (!confirm(`Supprimer ${email} ?`)) return
-    const { error } = await supabase.from('email_recipients').delete().eq('id', id)
+    const { error } = await supabase.from(T.table).delete().eq('id', id)
     if (error) toast.error('Erreur lors de la suppression.')
     else { toast.success('Destinataire supprimé.'); fetchRecipients() }
   }
@@ -84,17 +91,22 @@ export default function EmailRecipients() {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <h2 className="page-title">Destinataires du rapport</h2>
-            <p className="page-subtitle">Gérez les destinataires du rapport journalier automatique</p>
+            <h2 className="page-title">Destinataires</h2>
+            <p className="page-subtitle">{T.sub}</p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              {Object.entries(TABS).map(([k, v]) => (
+                <button key={k} className={`btn btn-sm ${tab === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab(k)}>{v.title}</button>
+              ))}
+            </div>
           </div>
-          <button
+          {tab === 'rapport' && <button
             className="btn btn-secondary btn-sm"
             onClick={testEmail}
             disabled={testing || activeCount === 0}
             style={{ paddingTop: 4 }}
           >
             {testing ? <><div className="spinner" /> Envoi...</> : <><Mail size={14} /> Tester l'envoi</>}
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -132,7 +144,7 @@ export default function EmailRecipients() {
               </button>
             </div>
             <p style={{ fontSize: 12, color: 'var(--gray-400)', margin: 0 }}>
-              Le rapport est envoyé automatiquement chaque jour à 23h59.
+              {T.hint}
             </p>
           </div>
         </div>
