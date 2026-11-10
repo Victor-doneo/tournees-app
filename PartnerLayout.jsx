@@ -45,7 +45,7 @@ export default function PartnerLayout() {
               </NavLink>
               <NavLink to="/partner/destinataires-plan" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
                 <Mail size={16} />
-                Destinataires du plan
+                Gestion mailing
               </NavLink>
             </>
           )}

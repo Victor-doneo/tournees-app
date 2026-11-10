@@ -93,7 +93,7 @@ export default function EmailRecipients({ only }) {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <h2 className="page-title">Destinataires</h2>
+            <h2 className="page-title">Gestion mailing</h2>
             <p className="page-subtitle">{T.sub}</p>
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
               {Object.entries(TABS).filter(([k]) => !only || k === 'plan' || k === 'modele').map(([k, v]) => (
