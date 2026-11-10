@@ -36,7 +36,9 @@ jobs:
           DATE: ${{ inputs.date }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
           FORCE: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
-        run: node ../repo/scripts/urbantz-import.mjs
+        run: |
+          cp ../repo/scripts/urbantz-import.mjs .
+          node urbantz-import.mjs
       - name: Capture d'écran en cas d'échec
         if: failure()
         uses: actions/upload-artifact@v4
