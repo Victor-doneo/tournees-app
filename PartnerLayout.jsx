@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
-import { LogOut, ClipboardList, AlertTriangle } from 'lucide-react'
+import { LogOut, ClipboardList, AlertTriangle, LayoutGrid, Mail } from 'lucide-react'
 
 export default function PartnerLayout() {
   const { profile, signOut } = useAuth()
@@ -36,6 +36,19 @@ export default function PartnerLayout() {
             <AlertTriangle size={16} />
             Défaillances
           </NavLink>
+          {profile?.can_manage_loading_plan && (
+            <>
+              <span className="sidebar-section-label">Plan de chargement</span>
+              <NavLink to="/partner/plan-chargement" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+                <LayoutGrid size={16} />
+                Plan de chargement
+              </NavLink>
+              <NavLink to="/partner/destinataires-plan" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+                <Mail size={16} />
+                Destinataires du plan
+              </NavLink>
+            </>
+          )}
         </nav>
 
         <div className="sidebar-footer">

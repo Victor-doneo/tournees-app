@@ -8,8 +8,8 @@ const TABS = {
   plan: { table: 'loading_plan_recipients', title: 'Plan de chargement', sub: 'Destinataires du mail PLAN DE CHARGEMENT/ CCV / ANTONY / JJ.MM.AAAA (envoi depuis la page « Plan de chargement »)', hint: 'Un mail par journée, envoyé manuellement via le bouton « Envoyer par mail ».' },
 }
 
-export default function EmailRecipients() {
-  const [tab, setTab] = useState('rapport')
+export default function EmailRecipients({ only }) {
+  const [tab, setTab] = useState(only || 'rapport')
   const T = TABS[tab]
   const [recipients, setRecipients] = useState([])
   const [loading, setLoading] = useState(true)
@@ -94,7 +94,7 @@ export default function EmailRecipients() {
             <h2 className="page-title">Destinataires</h2>
             <p className="page-subtitle">{T.sub}</p>
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              {Object.entries(TABS).map(([k, v]) => (
+              {!only && Object.entries(TABS).map(([k, v]) => (
                 <button key={k} className={`btn btn-sm ${tab === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab(k)}>{v.title}</button>
               ))}
             </div>

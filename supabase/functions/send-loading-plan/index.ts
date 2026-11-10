@@ -18,8 +18,9 @@ Deno.serve(async (req) => {
     const token = (req.headers.get('Authorization') || '').replace('Bearer ', '')
     const { data: u } = await admin.auth.getUser(token)
     if (!u?.user) return json({ error: 'Non authentifié' }, 401)
-    const { data: profile } = await admin.from('users').select('id, role').eq('id', u.user.id).single()
-    if (profile?.role !== 'admin') return json({ error: 'Réservé aux administrateurs' }, 403)
+    const { data: profile } = await admin.from('users').select('id, role, can_manage_loading_plan').eq('id', u.user.id).single()
+    const allowed = profile?.role === 'admin' || (profile?.role === 'partner' && profile?.can_manage_loading_plan === true)
+    if (!allowed) return json({ error: 'Accès non autorisé' }, 403)
 
     const { delivery_date, html } = await req.json()
     if (!/^\d{4}-\d{2}-\d{2}$/.test(delivery_date || '') || !html) return json({ error: 'Paramètres invalides' }, 400)

@@ -33,6 +33,11 @@ function homeForRole(role) {
   return '/operator'
 }
 
+function LoadingPlanRoute({ children }) {
+  const { profile } = useAuth()
+  return profile?.can_manage_loading_plan ? children : <Navigate to="/partner" replace />
+}
+
 function PrivateRoute({ children, roles }) {
   const { user, profile, loading } = useAuth()
   if (loading) return (
@@ -95,6 +100,8 @@ export default function App() {
         <Route index element={<Demandes />} />
         <Route path="defaillances" element={<Defaillances />} />
         <Route path="search-parcel" element={<SearchParcel />} />
+        <Route path="plan-chargement" element={<LoadingPlanRoute><PlanChargement /></LoadingPlanRoute>} />
+        <Route path="destinataires-plan" element={<LoadingPlanRoute><EmailRecipients only="plan" /></LoadingPlanRoute>} />
       </Route>
 
       <Route path="*" element={<Navigate to={user ? homeForRole(profile?.role) : '/login'} />} />
