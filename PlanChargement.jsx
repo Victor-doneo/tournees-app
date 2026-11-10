@@ -3,7 +3,7 @@ import { supabase } from './supabase'
 import toast from 'react-hot-toast'
 import { LayoutGrid, Shuffle, Copy, RotateCcw, AlertTriangle, Send } from 'lucide-react'
 import { DEFAULT_TEMPLATE, renderSubject } from './mailTemplate'
-import { QUAIS, fmtMin, parseHM, distanceKm, generatePlan, shuffleQuais } from './chargementPlan'
+import { QUAIS, fmtMin, parseHM, distanceKm, travelMinutes, generatePlan, shuffleQuais } from './chargementPlan'
 
 const ALL_SLOTS = Array.from({ length: 19 }, (_, i) => 330 + i * 30) // 05:30 -> 14:30
 const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -15,6 +15,8 @@ export default function PlanChargement() {
   const [coords, setCoords] = useState(null)
   const [loading, setLoading] = useState(true)
   const [lv1Km, setLv1Km] = useState(5)
+  const [lv1Min, setLv1Min] = useState(10)
+  const [mode, setMode] = useState('time') // 'time' = temps de trajet avec trafic moyen, 'distance' = km à vol d'oiseau
   const [capacity, setCapacity] = useState(9)
   const [seed, setSeed] = useState(1)
   const [plan, setPlan] = useState([])
@@ -55,20 +57,25 @@ export default function PlanChargement() {
 
   const tours = useMemo(() => {
     if (!coords) return []
-    return rows.map(r => ({
+    return rows.map(r => {
+      const cp = r.code_postal_premiere_livraison ? String(r.code_postal_premiere_livraison).padStart(5, '0') : null
+      const dist = cp ? distanceKm(coords, cp) : null
+      const hpl = parseHM(r.heure_premiere_livraison)
+      return {
       id: r.id,
       name: r.tours_references?.name || r.name,
-      hpl: parseHM(r.heure_premiere_livraison),
+      hpl,
       lv1: r.type_livraison === 'LV1',
       type: r.type_livraison,
       cp: r.code_postal_premiere_livraison,
-      dist: r.code_postal_premiere_livraison ? distanceKm(coords, String(r.code_postal_premiere_livraison).padStart(5, '0')) : null,
+      dist,
+      trip: travelMinutes(dist, cp, hpl),
       colis: r.total_parcels,
-    }))
+    }})
   }, [rows, coords])
 
   // recalcul du plan quand les données ou les réglages changent
-  useEffect(() => { setPlan(tours.length ? generatePlan(tours, { lv1Km, capacity: Math.min(capacity, QUAIS.length), seed }) : []) }, [tours, lv1Km, capacity])
+  useEffect(() => { setPlan(tours.length ? generatePlan(tours, { mode, lv1Km, lv1Min, capacity: Math.min(capacity, QUAIS.length), seed }) : []) }, [tours, mode, lv1Km, lv1Min, capacity])
 
   function reshuffleQuais() {
     const s = seed + 1
@@ -137,7 +144,7 @@ export default function PlanChargement() {
     <>
       <div className="page-header">
         <h2 className="page-title">Plan de chargement</h2>
-        <p className="page-subtitle">Proposition automatique : heure de première livraison, puis distance depuis Antony (LV1 comptée comme plus loin). Quais placés au hasard.</p>
+        <p className="page-subtitle">Proposition automatique : heure de première livraison, puis temps de trajet estimé depuis Antony avec le trafic moyen de l'heure (ou distance), LV1 comptée comme plus loin. Quais placés au hasard.</p>
       </div>
 
       <div className="page-body">
@@ -145,16 +152,27 @@ export default function PlanChargement() {
           <select className="form-input" style={{ maxWidth: 260 }} value={date?.id || ''} onChange={e => setDate(dates.find(d => String(d.id) === e.target.value))}>
             {dates.map(d => <option key={d.id} value={d.id}>{fmtDate(d.delivery_date)}</option>)}
           </select>
-          <label style={{ fontSize: 13, color: 'var(--gray-600)', display: 'flex', alignItems: 'center', gap: 6 }}>
-            LV1 = +
-            <input type="number" className="form-input" style={{ width: 70 }} min={0} max={30} value={lv1Km} onChange={e => setLv1Km(Number(e.target.value) || 0)} /> km
-          </label>
+          <select className="form-input" style={{ maxWidth: 230 }} value={mode} onChange={e => setMode(e.target.value)} title="Critère de tri après l'heure de première livraison">
+            <option value="time">Temps de trajet (trafic moyen)</option>
+            <option value="distance">Distance à vol d'oiseau</option>
+          </select>
+          {mode === 'time' ? (
+            <label style={{ fontSize: 13, color: 'var(--gray-600)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              LV1 = +
+              <input type="number" className="form-input" style={{ width: 70 }} min={0} max={60} value={lv1Min} onChange={e => setLv1Min(Number(e.target.value) || 0)} /> min
+            </label>
+          ) : (
+            <label style={{ fontSize: 13, color: 'var(--gray-600)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              LV1 = +
+              <input type="number" className="form-input" style={{ width: 70 }} min={0} max={30} value={lv1Km} onChange={e => setLv1Km(Number(e.target.value) || 0)} /> km
+            </label>
+          )}
           <label style={{ fontSize: 13, color: 'var(--gray-600)', display: 'flex', alignItems: 'center', gap: 6 }}>
             Max par créneau
             <input type="number" className="form-input" style={{ width: 70 }} min={1} max={9} value={capacity} onChange={e => setCapacity(Math.max(1, Math.min(9, Number(e.target.value) || 9)))} />
           </label>
           <button className="btn btn-secondary btn-sm" onClick={reshuffleQuais}><Shuffle size={14} /> Mélanger les quais</button>
-          <button className="btn btn-secondary btn-sm" onClick={() => { setSeed(s => s + 1); setPlan(generatePlan(tours, { lv1Km, capacity: Math.min(capacity, QUAIS.length), seed: seed + 1 })) }}><RotateCcw size={14} /> Recalculer</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => { setSeed(s => s + 1); setPlan(generatePlan(tours, { mode, lv1Km, lv1Min, capacity: Math.min(capacity, QUAIS.length), seed: seed + 1 })) }}><RotateCcw size={14} /> Recalculer</button>
           <button className="btn btn-primary btn-sm" onClick={copyTable} disabled={!plan.length}><Copy size={14} /> Copier le tableau</button>
           <button className="btn btn-primary btn-sm" onClick={sendMail} disabled={!plan.length || sending}>{sending ? <><div className="spinner" /> Envoi...</> : <><Send size={14} /> Envoyer par mail</>}</button>
         </div>
@@ -188,7 +206,7 @@ export default function PlanChargement() {
                         {QUAIS.map(q => (
                           <td key={q} style={{ textAlign: 'center', fontFamily: 'monospace', fontSize: 13 }}>
                             {cell(s, q).map(t => (
-                              <span key={t.id} title={`${t.lv1 ? 'LV1 · ' : ''}${t.dist != null ? Math.round(t.dist) + ' km' : 'distance inconnue'}`}
+                              <span key={t.id} title={`${t.lv1 ? 'LV1 · ' : ''}${t.dist != null ? Math.round(t.dist) + ' km · ~' + Math.round(t.trip) + ' min' : 'distance inconnue'}`}
                                 style={{ display: 'inline-block', padding: '2px 6px', borderRadius: 4, background: conflicts.has(t.id) ? '#fee2e2' : t.lv1 ? '#eff6ff' : 'var(--gray-100)', color: t.lv1 ? '#1e40af' : 'inherit' }}>
                                 {t.name}
                               </span>
@@ -205,7 +223,7 @@ export default function PlanChargement() {
             <div className="card">
               <div className="table-wrapper">
                 <table>
-                  <thead><tr><th>Tournée</th><th>1re livraison</th><th>Code postal</th><th>Distance</th><th>Type</th><th>Colis</th><th>Créneau</th><th>Quai</th></tr></thead>
+                  <thead><tr><th>Tournée</th><th>1re livraison</th><th>Code postal</th><th>Distance</th><th>Trajet estimé</th><th>Type</th><th>Colis</th><th>Créneau</th><th>Quai</th></tr></thead>
                   <tbody>
                     {plan.map(t => (
                       <tr key={t.id}>
@@ -213,6 +231,7 @@ export default function PlanChargement() {
                         <td>{t.hpl != null ? fmtMin(t.hpl) : '—'}</td>
                         <td>{t.cp || '—'}</td>
                         <td>{t.dist != null ? `${Math.round(t.dist)} km` : '—'}</td>
+                        <td>{t.trip != null ? `~${Math.round(t.trip)} min` : '—'}</td>
                         <td>{t.type ? <span className={`badge ${t.lv1 ? 'badge-blue' : 'badge-gray'}`}>{t.type}</span> : '—'}</td>
                         <td>{t.colis ?? '—'}</td>
                         <td>
