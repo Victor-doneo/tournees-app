@@ -24,6 +24,7 @@ import Demandes from './Demandes'
 import Defaillances from './Defaillances'
 import Checklist from './Checklist'
 import PlanChargement from './PlanChargement'
+import ColisRetour from './ColisRetour'
 import PartnerLayout from './PartnerLayout'
 
 // Détermine la route d'accueil selon le rôle du profil
@@ -82,6 +83,7 @@ export default function App() {
         <Route path="email-recipients" element={<EmailRecipients />} />
         <Route path="checklist" element={<Checklist />} />
         <Route path="plan-chargement" element={<PlanChargement />} />
+        <Route path="colis-retour" element={<ColisRetour />} />
         <Route path="demandes" element={<Demandes />} />
         <Route path="defaillances" element={<Defaillances />} />
         <Route path="scan/:tourId" element={<ScanPage />} />

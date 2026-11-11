@@ -29,6 +29,7 @@ const navSections = [
       { to: '/admin/warehouse', label: 'Plan entrepôt', icon: <Map size={16} /> },
       { to: '/admin/anomalies-preparation', label: 'Anomalies préparation', icon: <PackageX size={16} /> },
       { to: '/admin/reprises', label: 'Reprises', icon: <RotateCcw size={16} /> },
+      { to: '/admin/colis-retour', label: 'Colis à retourner', icon: <PackageX size={16} /> },
     ],
   },
   {
