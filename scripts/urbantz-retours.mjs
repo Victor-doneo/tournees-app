@@ -63,7 +63,7 @@ try {
 await browser.close()
 
 // Règles de sélection
-const isDea = it => /\bDEA\b/i.test(`${it.name || ''} ${it.description || ''} ${JSON.stringify(it.metadata || {})}`)
+const isDea = it => /(^|[^A-Z0-9])DEA([^A-Z0-9]|$)/i.test(`${it.name || ''} ${it.description || ''} ${JSON.stringify(it.metadata || {})}`)
 const stat = {}, rows = new Map()
 for (const t of tasks.values()) {
   for (const it of t.items || []) {
