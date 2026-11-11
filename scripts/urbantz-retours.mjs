@@ -33,7 +33,7 @@ page.on('response', async r => {
     try { const j = await r.json(); if (Array.isArray(j)) { lastBatch = j.length; for (const t of j) tasks.set(t._id || t.id, t) } } catch {}
   }
 })
-const url = n => `https://web.urbantz.com/platform/c-chez-vous/tasks?mode=items&from=${day}&to=${day}&page=${n}&discarded=false&dateStyle=single&sort=when:up`
+const url = n => `https://web.urbantz.com/platform/c-chez-vous/tasks?mode=tasks&from=${day}&to=${day}&status=PICKED_UP,PARTIAL_PICKED_UP,PARTIAL_DELIVERED,NOT_DELIVERED&page=${n}&discarded=false&dateStyle=single&sort=when:up`
 try {
   await page.goto(url(0), { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(4000)
