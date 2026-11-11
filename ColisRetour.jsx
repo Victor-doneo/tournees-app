@@ -80,6 +80,15 @@ export default function ColisRetour() {
     if (!r) return toast.error(`Code ${code} introuvable pour cette date`)
     await receive([r])
   }
+  const [forcing, setForcing] = useState(false)
+  async function force() {
+    setForcing(true)
+    const { data, error } = await supabase.functions.invoke('trigger-urbantz-returns', { body: { date: day } })
+    setForcing(false)
+    if (error || data?.error) return toast.error(data?.error || error.message)
+    toast.success('Extraction lancée : rafraîchissez dans ~1 minute')
+    setTimeout(load, 60000)
+  }
   const toggleOpen = k => setOpen(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
   const toggle = id => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
@@ -89,11 +98,12 @@ export default function ColisRetour() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="page-title">Colis à retourner</h2>
-            <p className="page-subtitle">Récupérés dans Urbantz chaque soir à 18h30 · étiquettes 10×15 cm historisées</p>
+            <p className="page-subtitle">Récupérés dans Urbantz toutes les 30 min de 11h30 à 15h30 · étiquettes 10×15 cm historisées</p>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input type="date" className="form-input" value={day} onChange={e => setDay(e.target.value)} />
             <button className="btn btn-secondary" onClick={load}><RefreshCw size={14} /></button>
+            <button className="btn btn-secondary" disabled={forcing} onClick={force}>{forcing ? 'Lancement…' : 'Forcer l’extraction'}</button>
             <button className="btn btn-secondary" onClick={() => receive(rows.filter(r => sel.has(r.id)))}><CheckCircle size={14} /> Accuser réception ({sel.size})</button>
             <button className="btn btn-primary" onClick={() => print(rows.filter(r => sel.has(r.id)))}><Printer size={14} /> Imprimer la sélection ({sel.size})</button>
             <button className="btn btn-secondary" onClick={() => print(rows)}><Printer size={14} /> Tout imprimer</button>

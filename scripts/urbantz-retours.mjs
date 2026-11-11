@@ -1,7 +1,7 @@
 // Récupération des colis À RETOURNER dans Urbantz (Tâches > Items) en fin de journée.
 // Règles : item « Livraison impossible » (NOT_DELIVERED) -> retour ;
 //          item collecté / partiellement collecté (PICKED_UP...) -> retour sauf si « DEA » dans le nom/description.
-// Lancé par GitHub Actions (.github/workflows/urbantz-retours.yml) à 18h30, heure de Paris.
+// Lancé par GitHub Actions (.github/workflows/urbantz-retours.yml) toutes les 30 min de 11h30 à 15h30, heure de Paris (ou à la demande).
 // Env : URBANTZ_EMAIL, URBANTZ_PASSWORD, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY ; facultatif DATE, DRY_RUN, FORCE
 import { chromium } from 'playwright'
 import { createClient } from '@supabase/supabase-js'
@@ -9,9 +9,10 @@ import { createClient } from '@supabase/supabase-js'
 const { URBANTZ_EMAIL, URBANTZ_PASSWORD, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DATE, DRY_RUN, FORCE } = process.env
 for (const [k, v] of Object.entries({ URBANTZ_EMAIL, URBANTZ_PASSWORD, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY })) if (!v) throw new Error(`Secret manquant : ${k}`)
 
-const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map(x => [x.type, x.value]))
+const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map(x => [x.type, x.value]))
 const day = DATE || `${p.year}-${p.month}-${p.day}`
-if (!FORCE && !DATE && Number(p.hour) !== 18) { console.log(`Il est ${p.hour}h à Paris : extraction prévue à 18h, rien à faire.`); process.exit(0) }
+const mins = Number(p.hour) * 60 + Number(p.minute)
+if (!FORCE && !DATE && (mins < 11 * 60 + 25 || mins > 15 * 60 + 50)) { console.log(`Il est ${p.hour}h${p.minute} à Paris : extraction prévue de 11h30 à 15h30, rien à faire.`); process.exit(0) }
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 // Codes de tournées de l'application (rapprochement facultatif avec le nom Urbantz)
