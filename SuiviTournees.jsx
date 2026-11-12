@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
 import { Truck, AlertTriangle, CheckCircle, RefreshCw, Clock, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { syncTourReturns } from './retourSync'
 
 export default function SuiviTournees() {
   const [tours, setTours] = useState([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(null)
+  const [labels, setLabels] = useState({})
 
   useEffect(() => { fetchTours() }, [])
 
@@ -21,6 +23,13 @@ export default function SuiviTournees() {
       .maybeSingle()
 
     if (!dateData) { setTours([]); setLoading(false); return }
+
+    // Colis à retourner par tournée : si tous sont réceptionnés, la tournée est considérée comme revenue
+    await syncTourReturns(today)
+    const { data: lab } = await supabase.from('return_labels').select('tour_code, received_at').eq('task_date', today)
+    const g = {}
+    for (const l of lab || []) { const k = l.tour_code; if (!k) continue; g[k] = g[k] || { total: 0, received: 0 }; g[k].total++; if (l.received_at) g[k].received++ }
+    setLabels(g)
 
     const { data } = await supabase
       .from('tours')
@@ -131,6 +140,11 @@ export default function SuiviTournees() {
                           </span>
                         )}
                       </div>
+                      {labels[refName] && (
+                        <div style={{ marginTop: 4, fontSize: 12, fontWeight: 600, color: labels[refName].received === labels[refName].total ? 'var(--green)' : 'var(--orange)' }}>
+                          Colis à retourner : {labels[refName].received}/{labels[refName].total} réceptionnés
+                        </div>
+                      )}
                       {t.retard && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
                           <AlertTriangle size={12} color="var(--red)" />

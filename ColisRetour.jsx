@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { Printer, RefreshCw, PackageX, CheckCircle, ChevronDown, ChevronRight, ScanLine } from 'lucide-react'
 import { code128Svg } from './code128'
 import { useAuth } from './AuthContext'
+import { syncTourReturns } from './retourSync'
 
 const todayStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' })
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
@@ -70,7 +71,11 @@ export default function ColisRetour() {
     if (!ids.length) return toast('Déjà réceptionné')
     const { error } = await supabase.from('return_labels').update({ received_at: new Date().toISOString(), received_by: user?.id || null }).in('id', ids)
     if (error) return toast.error(error.message)
-    toast.success(`${ids.length} colis réceptionné(s)`); load()
+    toast.success(`${ids.length} colis réceptionné(s)`)
+    const codes = [...new Set(list.map(r => r.tour_code).filter(Boolean))]
+    const back = await syncTourReturns(day, codes)
+    if (back.length) toast.success(`${back.length} tournée(s) marquée(s) comme revenue(s) dans le suivi`)
+    load()
   }
   async function scanReceive(e) {
     e.preventDefault()
