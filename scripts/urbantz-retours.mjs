@@ -58,11 +58,15 @@ try {
   }
   for (let i = 0; i < 20 && !tasks.size; i++) await page.waitForTimeout(1500)
   if (!tasks.size) { console.log(`Aucune tâche Urbantz pour ${day} (jour férié ? connexion refusée ?)`); if (FORCE || DATE) throw new Error('Aucune tâche lue') }
-  // pages suivantes (100 tâches par page)
+  // pages suivantes (100 tâches par page) : on attend explicitement la réponse de la page demandée
+  console.log(`page 0 : ${lastBatch} tâches`)
   for (let n = 1; n < 30 && lastBatch >= 100; n++) {
     lastBatch = 0
+    const wait = page.waitForResponse(r => r.url().includes('backend.urbantz.com/task?') && new URL(r.url()).searchParams.get('page') === String(n), { timeout: 40000 }).catch(() => null)
     await page.goto(url(n), { waitUntil: 'domcontentloaded' })
-    for (let i = 0; i < 12 && !lastBatch; i++) await page.waitForTimeout(1000)
+    const r = await wait
+    if (r) { try { const j = await r.json(); lastBatch = j.length; for (const t of j) tasks.set(t._id || t.id, t) } catch {} }
+    console.log(`page ${n} : ${lastBatch} tâches (total ${tasks.size})`)
   }
 } catch (e) {
   await page.screenshot({ path: 'urbantz-erreur.png', fullPage: true }).catch(() => {})
