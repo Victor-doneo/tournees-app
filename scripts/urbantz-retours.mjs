@@ -35,6 +35,8 @@ const matchCode = name => {
 const browser = await chromium.launch()
 const page = await (await browser.newContext({ locale: 'fr-FR', timezoneId: 'Europe/Paris' })).newPage()
 const tasks = new Map()
+let firstReq = null
+page.on('request', r => { if (!firstReq && r.url().includes('backend.urbantz.com/task?')) firstReq = { url: r.url(), headers: r.headers() } })
 let lastBatch = 0
 page.on('response', async r => {
   const u = r.url()
@@ -58,15 +60,19 @@ try {
   }
   for (let i = 0; i < 20 && !tasks.size; i++) await page.waitForTimeout(1500)
   if (!tasks.size) { console.log(`Aucune tâche Urbantz pour ${day} (jour férié ? connexion refusée ?)`); if (FORCE || DATE) throw new Error('Aucune tâche lue') }
-  // pages suivantes (100 tâches par page) : on attend explicitement la réponse de la page demandée
+  // pages suivantes (100 tâches par page) : appels directs à l'API avec les mêmes en-têtes que la page
   console.log(`page 0 : ${lastBatch} tâches`)
-  for (let n = 1; n < 30 && lastBatch >= 100; n++) {
-    lastBatch = 0
-    const wait = page.waitForResponse(r => r.url().includes('backend.urbantz.com/task?') && new URL(r.url()).searchParams.get('page') === String(n), { timeout: 40000 }).catch(() => null)
-    await page.goto(url(n), { waitUntil: 'domcontentloaded' })
-    const r = await wait
-    if (r) { try { const j = await r.json(); lastBatch = j.length; for (const t of j) tasks.set(t._id || t.id, t) } catch {} }
-    console.log(`page ${n} : ${lastBatch} tâches (total ${tasks.size})`)
+  if (lastBatch >= 100 && firstReq) {
+    const headers = Object.fromEntries(Object.entries(firstReq.headers).filter(([k]) => !/^(host|content-length|connection|accept-encoding)$/i.test(k) && !k.startsWith(':')))
+    for (let n = 1; n < 30; n++) {
+      const u = new URL(firstReq.url); u.searchParams.set('page', String(n))
+      const resp = await page.context().request.get(u.toString(), { headers })
+      const j = resp.ok() ? await resp.json().catch(() => []) : []
+      console.log(`page ${n} : ${Array.isArray(j) ? j.length : 'erreur ' + resp.status()} tâches`)
+      if (!Array.isArray(j) || !j.length) break
+      for (const t of j) tasks.set(t._id || t.id, t)
+      if (j.length < 100) break
+    }
   }
 } catch (e) {
   await page.screenshot({ path: 'urbantz-erreur.png', fullPage: true }).catch(() => {})
