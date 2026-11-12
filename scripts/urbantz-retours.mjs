@@ -18,7 +18,15 @@ const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 // Codes de tournées de l'application (rapprochement facultatif avec le nom Urbantz)
 const { data: dRow } = await sb.from('delivery_dates').select('id').eq('delivery_date', day).maybeSingle()
 let codes = []
-if (dRow) { const { data } = await sb.from('tours').select('name, tours_references(name)').eq('delivery_date_id', dRow.id); codes = (data || []).map(t => t.tours_references?.name || t.name) }
+// Livraisons contre reprise du jour (onglet Reprises, issues des PDF), hors DEA : un BL « X » livré doit ressortir en collecté sous « 7X »
+const lcr = new Set()
+if (dRow) {
+  const { data } = await sb.from('tours').select('name, tours_references(name)').eq('delivery_date_id', dRow.id); codes = (data || []).map(t => t.tours_references?.name || t.name)
+  const { data: ps, error: pe } = await sb.from('parcels').select('barcode, dea, tours!inner(delivery_date_id)').eq('exclusion_reason', 'Livraison contre reprise').eq('tours.delivery_date_id', dRow.id)
+  if (pe) throw pe
+  for (const p of ps || []) if (!p.dea && p.barcode) lcr.add(String(p.barcode).trim())
+}
+console.log(`${lcr.size} livraisons contre reprise dans l'application pour le ${day}`)
 const matchCode = name => {
   const n = String(name || '').toUpperCase().replace(/^TA830CAMION/, '')
   return [...codes].sort((a, b) => b.length - a.length).find(c => { const i = n.indexOf(String(c).toUpperCase()); return i >= 0 && !/\d/.test(n[i + String(c).length] || '') }) || null
@@ -34,7 +42,7 @@ page.on('response', async r => {
     try { const j = await r.json(); if (Array.isArray(j)) { lastBatch = j.length; for (const t of j) tasks.set(t._id || t.id, t) } } catch {}
   }
 })
-const url = n => `https://web.urbantz.com/platform/c-chez-vous/tasks?mode=tasks&from=${day}&to=${day}&status=PICKED_UP,PARTIAL_PICKED_UP,PARTIAL_DELIVERED,NOT_DELIVERED&page=${n}&discarded=false&dateStyle=single&sort=when:up`
+const url = n => `https://web.urbantz.com/platform/c-chez-vous/tasks?mode=tasks&from=${day}&to=${day}&page=${n}&discarded=false&dateStyle=single&sort=when:up`
 try {
   await page.goto(url(0), { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(4000)
@@ -66,24 +74,29 @@ await browser.close()
 // Règles de sélection
 const isDea = it => /(^|[^A-Z0-9])DEA([^A-Z0-9]|$)/i.test(`${it.name || ''} ${it.description || ''} ${JSON.stringify(it.metadata || {})}`)
 const stat = {}, rows = new Map()
+let lcrCount = 0
 for (const t of tasks.values()) {
   for (const it of t.items || []) {
     stat[it.status] = (stat[it.status] || 0) + 1
     if (!it.barcode) continue
-    let reason = null
+    let reason = null, outCode = it.barcode
+    const bc = String(it.barcode).trim()
     if (it.status === 'NOT_DELIVERED') reason = 'Livraison impossible'
     else if (/PICKED_UP/.test(it.status || '') && !/^NOT_/.test(it.status)) reason = isDea(it) ? null : (it.status === 'PICKED_UP' ? 'Collecté' : 'Partiellement collecté')
+    // Livraison contre reprise livrée : elle doit apparaître en « collecté » sous le numéro 7 + numéro du colis livré
+    if (!reason && it.status === 'DELIVERED' && lcr.has(bc)) { reason = 'Collecté (livraison contre reprise)'; outCode = '7' + bc; lcrCount++ }
     if (!reason) continue
     const loc = t.location || {}
-    rows.set(`${day}|${it.barcode}`, {
+    rows.set(`${day}|${outCode}`, {
       task_date: day, round_name: t.roundName || null, tour_code: matchCode(t.roundName), task_id: t.taskId || t.id || null,
-      barcode: it.barcode, item_name: it.name || null, item_description: it.description || null, item_status: it.status, reason,
+      barcode: outCode, item_name: it.name || null, item_description: it.description || null, item_status: it.status, reason,
       customer_name: t.contact?.person || null, customer_phone: t.contact?.phone || null,
       address: [loc.number, loc.street].filter(Boolean).join(' ') || loc.address || null, zip: loc.zip || null, city: loc.city || null,
     })
   }
 }
 console.log(`${tasks.size} tâches, statuts items :`, JSON.stringify(stat))
+console.log(`dont ${lcrCount} livraison(s) contre reprise livrée(s) ajoutée(s) en collecté`)
 console.log(`${rows.size} colis à retourner pour le ${day}`)
 if (DRY_RUN) { console.log('DRY_RUN : rien écrit.'); process.exit(0) }
 if (rows.size) {
