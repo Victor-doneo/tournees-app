@@ -8,7 +8,7 @@ import { printLabels, todayStr } from './retourLabels'
 
 const hhmm = iso => iso ? new Date(iso).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }) : ''
 
-export default function SuiviTournees() {
+export default function SuiviTournees({ readOnly = false }) {
   const { user } = useAuth()
   const [day, setDay] = useState(todayStr())
   const [tours, setTours] = useState([])
@@ -28,7 +28,7 @@ export default function SuiviTournees() {
     const { data: dateData } = await supabase.from('delivery_dates').select('id').eq('delivery_date', day).maybeSingle()
     let tl = []
     if (dateData) {
-      await syncTourReturns(day) // tout réceptionné => tournée revenue
+      if (!readOnly) await syncTourReturns(day) // tout réceptionné => tournée revenue
       const { data } = await supabase
         .from('tours')
         .select('id, name, status, retard, heure_retour, reference_id, type_livraison, heure_premiere_livraison, code_postal_premiere_livraison, tours_references(name)')
@@ -107,23 +107,23 @@ export default function SuiviTournees() {
       <div className="table-wrapper" style={{ borderTop: '1px solid var(--gray-200)' }}>
         <table>
           <thead><tr>
-            <th><input type="checkbox" checked={allSel} onChange={() => setSel(s => { const n = new Set(s); list.forEach(r => allSel ? n.delete(r.id) : n.add(r.id)); return n })} /></th>
+            {!readOnly && <th><input type="checkbox" checked={allSel} onChange={() => setSel(s => { const n = new Set(s); list.forEach(r => allSel ? n.delete(r.id) : n.add(r.id)); return n })} /></th>}
             <th>Code-barres</th><th>Article</th><th>Client</th><th>Motif</th><th>Réception</th><th>Imprimé</th></tr></thead>
           <tbody>{list.map(r => (
             <tr key={r.id}>
-              <td><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
+              {!readOnly && <td><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>}
               <td style={{ fontFamily: 'monospace' }}>{r.barcode}</td>
               <td>{r.item_name}<div style={{ color: 'var(--gray-400)', fontSize: 12 }}>{(r.item_description || '').slice(0, 60)}</div></td>
               <td>{r.customer_name}<div style={{ color: 'var(--gray-400)', fontSize: 12 }}>{[r.zip, r.city].filter(Boolean).join(' ')}</div></td>
               <td><span className="badge badge-orange">{r.reason}</span></td>
-              <td>{r.received_at ? <span className="badge badge-green">{hhmm(r.received_at)}</span> : <button className="btn btn-secondary btn-sm" onClick={() => receive([r])}>Accuser réception</button>}</td>
+              <td>{r.received_at ? <span className="badge badge-green">{hhmm(r.received_at)}</span> : readOnly ? <span style={{ color: 'var(--gray-400)' }}>En attente</span> : <button className="btn btn-secondary btn-sm" onClick={() => receive([r])}>Accuser réception</button>}</td>
               <td>{r.printed_at ? hhmm(r.printed_at) : '—'}</td>
             </tr>))}</tbody>
         </table>
-        <div style={{ padding: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {!readOnly && <div style={{ padding: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-secondary btn-sm" onClick={() => receive(list)}><CheckCircle size={14} /> Tout réceptionner</button>
           <button className="btn btn-secondary btn-sm" onClick={() => print(list.filter(r => sel.has(r.id)))}><Printer size={14} /> Imprimer les cochés</button>
-        </div>
+        </div>}
       </div>
     )
   }
@@ -139,14 +139,16 @@ export default function SuiviTournees() {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h2 className="page-title">Suivi des tournées</h2>
-            <p className="page-subtitle" style={{ textTransform: 'capitalize' }}>{dayLabel} · colis à retourner récupérés dans Urbantz de 11h30 à 15h30</p>
+            <p className="page-subtitle" style={{ textTransform: 'capitalize' }}>{dayLabel}{readOnly ? ' · lecture seule' : ' · colis à retourner récupérés dans Urbantz de 11h30 à 15h30'}</p>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <input type="date" className="form-input" value={day} onChange={e => setDay(e.target.value)} />
             <button className="btn btn-ghost btn-sm" onClick={fetchAll}><RefreshCw size={14} /> Actualiser</button>
-            <button className="btn btn-secondary btn-sm" disabled={forcing} onClick={force}>{forcing ? 'Lancement…' : 'Forcer l’extraction'}</button>
-            <button className="btn btn-primary btn-sm" onClick={() => print(labels.filter(r => sel.has(r.id)))}><Printer size={14} /> Imprimer la sélection ({sel.size})</button>
-            <button className="btn btn-secondary btn-sm" onClick={() => receive(labels.filter(r => sel.has(r.id)))}><CheckCircle size={14} /> Accuser réception ({sel.size})</button>
+            {!readOnly && <>
+              <button className="btn btn-secondary btn-sm" disabled={forcing} onClick={force}>{forcing ? 'Lancement…' : 'Forcer l’extraction'}</button>
+              <button className="btn btn-primary btn-sm" onClick={() => print(labels.filter(r => sel.has(r.id)))}><Printer size={14} /> Imprimer la sélection ({sel.size})</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => receive(labels.filter(r => sel.has(r.id)))}><CheckCircle size={14} /> Accuser réception ({sel.size})</button>
+            </>}
           </div>
         </div>
       </div>
@@ -166,10 +168,10 @@ export default function SuiviTournees() {
             </div>
 
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <form onSubmit={scanReceive} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {!readOnly && <form onSubmit={scanReceive} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <ScanLine size={18} />
                 <input className="form-input" style={{ maxWidth: 320 }} placeholder="Scanner un code-barres pour accuser réception" value={scan} onChange={e => setScan(e.target.value)} />
-              </form>
+              </form>}
               <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
                 <input type="checkbox" checked={showReturned} onChange={e => setShowReturned(e.target.checked)} /> Afficher les tournées rentrées
               </label>
@@ -212,7 +214,7 @@ export default function SuiviTournees() {
                         </div>
                       )}
                     </div>
-                    {!t.heure_retour && (
+                    {!readOnly && !t.heure_retour && (
                       <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
                         <button className="btn btn-sm" disabled={isUpdating} onClick={() => toggleRetard(t)}
                           style={{ background: t.retard ? '#fef2f2' : 'var(--white)', border: t.retard ? '1px solid #fca5a5' : '1px solid var(--gray-200)', color: t.retard ? 'var(--red)' : 'var(--gray-500)' }}>

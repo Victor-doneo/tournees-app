@@ -89,6 +89,13 @@ export default function Users() {
     fetchUsers()
   }
 
+  async function toggleTracking(u) {
+    const { error } = await supabase.from('users').update({ can_view_tour_tracking: !u.can_view_tour_tracking }).eq('id', u.id)
+    if (error) return toast.error('Erreur : ' + error.message)
+    toast.success(u.can_view_tour_tracking ? 'Accès au suivi des tournées retiré' : 'Accès au suivi des tournées accordé')
+    fetchUsers()
+  }
+
   async function updateRole(userId, role) {
     const { error } = await supabase.from('users').update({ role }).eq('id', userId)
     if (error) return toast.error('Erreur')
@@ -123,6 +130,7 @@ export default function Users() {
                     <th>Email</th>
                     <th>Rôle</th>
                     <th>Plan de chargement</th>
+                    <th>Suivi tournées (lecture)</th>
                     <th>Statut</th>
                     <th>Créé le</th>
                     <th></th>
@@ -165,6 +173,14 @@ export default function Users() {
                         {u.role === 'partner' ? (
                           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
                             <input type="checkbox" checked={!!u.can_manage_loading_plan} onChange={() => toggleLoadingPlan(u)} />
+                            Accès
+                          </label>
+                        ) : <span style={{ color: 'var(--gray-300)' }}>{u.role === 'admin' ? 'Toujours' : '—'}</span>}
+                      </td>
+                      <td>
+                        {u.role === 'partner' ? (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={!!u.can_view_tour_tracking} onChange={() => toggleTracking(u)} />
                             Accès
                           </label>
                         ) : <span style={{ color: 'var(--gray-300)' }}>{u.role === 'admin' ? 'Toujours' : '—'}</span>}
