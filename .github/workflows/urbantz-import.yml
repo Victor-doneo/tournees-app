@@ -1,8 +1,7 @@
 name: Import des heures Urbantz (10h30)
 on:
   schedule:
-    - cron: '30 8 * * 1-6'   # 10h30 heure d'été (UTC+2)
-    - cron: '30 9 * * 1-6'   # 10h30 heure d'hiver (UTC+1) : le script ne travaille qu'à 10h, heure de Paris
+    - cron: '10,40 8-11 * * 1-6'   # plusieurs passages entre 10h et 13h (Paris) : GitHub retarde/saute parfois les cron ; le script ignore ce qui est déjà importé
   workflow_dispatch:
     inputs:
       date:

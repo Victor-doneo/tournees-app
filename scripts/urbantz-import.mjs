@@ -12,7 +12,7 @@ const parisParts = () => Object.fromEntries(new Intl.DateTimeFormat('en-CA', { t
 const now = parisParts()
 const today = `${now.year}-${now.month}-${now.day}`
 // Deux déclenchements UTC (été / hiver) : on ne travaille qu'à 10h, heure de Paris
-if (!FORCE && !DATE && Number(now.hour) !== 10) { console.log(`Il est ${now.hour}h à Paris : import prévu à 10h, rien à faire.`); process.exit(0) }
+if (!FORCE && !DATE && (Number(now.hour) < 10 || Number(now.hour) > 12)) { console.log(`Il est ${now.hour}h à Paris : import prévu entre 10h et 13h, rien à faire.`); process.exit(0) }
 
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
@@ -33,6 +33,11 @@ const { data: tours, error: te } = await sb.from('tours').select('id, name, tour
 if (te) throw te
 const codes = tours.map(t => t.tours_references?.name || t.name)
 console.log(`Jour visé : ${day} (${tours.length} tournées dans l'application)`)
+// Passages multiples (GitHub retarde ou saute parfois les déclenchements) : si tout est déjà importé, on s'arrête
+if (!FORCE && !DATE) {
+  const { count: missing } = await sb.from('tours').select('id', { count: 'exact', head: true }).eq('delivery_date_id', dateRow.id).is('urbantz_first_arrival', null)
+  if (!missing) { console.log('Heures Urbantz déjà importées pour ce jour, rien à faire.'); process.exit(0) }
+}
 
 // 2) Urbantz : connexion puis lecture des tournées du jour (réponses « /mission? » du tableau de bord)
 const browser = await chromium.launch()
