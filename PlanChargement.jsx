@@ -80,23 +80,15 @@ export default function PlanChargement() {
   // recalcul du plan quand les données ou les réglages changent
   useEffect(() => { setPlan(tours.length ? generatePlan(tours, { mode, lv1Km, lv1Min, capacity: Math.min(capacity, QUAIS.length), seed }) : []) }, [tours, mode, lv1Km, lv1Min, capacity])
 
-  // Import du fichier d'heures Urbantz : { date, rounds: [{ name, hub, first }] } -> tournées de la journée choisie
-  async function importUrbantz(e) {
-    const file = e.target.files?.[0]; e.target.value = ''
-    if (!file || !date) return
-    try {
-      const j = JSON.parse(await file.text())
-      if (j.date && j.date !== date.delivery_date) return toast.error(`Ce fichier est daté du ${j.date}, la journée choisie est le ${date.delivery_date}.`)
-      const codes = rows.map(r => r.tours_references?.name || r.name)
-      const byCode = {}
-      for (const r of j.rounds || []) { const c = matchRoundCode(r.name, codes); if (c && r.first) byCode[c] = r }
-      const upd = rows.map(r => { const u = byCode[r.tours_references?.name || r.name]; return u ? { id: r.id, first: u.first, hub: u.hub || '' } : null }).filter(Boolean)
-      if (!upd.length) return toast.error('Aucune tournée du fichier ne correspond à cette journée.')
-      const { data, error } = await supabase.rpc('set_urbantz_times', { p_date: date.delivery_date, p_rows: upd })
-      if (error) return toast.error('Erreur : ' + error.message)
-      toast.success(`${data} tournée(s) mises à jour avec les heures Urbantz (${rows.length - data} sans heure)`)
-      loadTours(date)
-    } catch (err) { toast.error('Fichier illisible : ' + err.message) }
+  // Récupération automatique des heures d'arrivée Urbantz (lance le workflow GitHub puis recharge les tournées)
+  const [fetchingUrbantz, setFetchingUrbantz] = useState(false)
+  async function fetchUrbantz() {
+    if (!date) return
+    setFetchingUrbantz(true)
+    const { data, error } = await supabase.functions.invoke('trigger-urbantz-returns', { body: { workflow: 'import', date: date.delivery_date } })
+    if (error || data?.error) { setFetchingUrbantz(false); return toast.error(data?.error || error.message) }
+    toast.success('Récupération lancée, environ 1 minute…')
+    setTimeout(() => { loadTours(date); setFetchingUrbantz(false) }, 70000)
   }
 
   function reshuffleQuais() {
@@ -196,10 +188,9 @@ export default function PlanChargement() {
           </label>
           <button className="btn btn-secondary btn-sm" onClick={reshuffleQuais}><Shuffle size={14} /> Mélanger les quais</button>
           <button className="btn btn-secondary btn-sm" onClick={() => { setSeed(s => s + 1); setPlan(generatePlan(tours, { mode, lv1Km, lv1Min, capacity: Math.min(capacity, QUAIS.length), seed: seed + 1 })) }}><RotateCcw size={14} /> Recalculer</button>
-          <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }} title="Fichier d'heures d'arrivée prévues relevées dans Urbantz">
-            <Upload size={14} /> Importer les heures Urbantz
-            <input type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={importUrbantz} />
-          </label>
+          <button className="btn btn-secondary btn-sm" onClick={fetchUrbantz} disabled={fetchingUrbantz || !date} title="Lit dans Urbantz les heures d'arrivée prévues de cette journée">
+            {fetchingUrbantz ? <><div className="spinner" /> Récupération…</> : <><Upload size={14} /> Récupérer les heures Urbantz</>}
+          </button>
           <button className="btn btn-primary btn-sm" onClick={copyTable} disabled={!plan.length}><Copy size={14} /> Copier le tableau</button>
           <button className="btn btn-primary btn-sm" onClick={sendMail} disabled={!plan.length || sending}>{sending ? <><div className="spinner" /> Envoi...</> : <><Send size={14} /> Envoyer par mail</>}</button>
         </div>

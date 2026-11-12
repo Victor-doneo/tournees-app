@@ -1,4 +1,5 @@
-// Fonction Edge : lance à la demande le workflow GitHub « Colis à retourner Urbantz » (bouton « Forcer l'extraction »).
+// Fonction Edge : lance à la demande un workflow GitHub (boutons « Forcer l'extraction » des colis à retourner et « Récupérer les heures Urbantz » du plan de chargement).
+// Corps : { workflow: 'returns' | 'import', date?: 'AAAA-MM-JJ' }
 // Déploiement : supabase functions deploy trigger-urbantz-returns
 // Secret à créer : GITHUB_DISPATCH_TOKEN = jeton GitHub « fine-grained » limité au dépôt Victor-doneo/tournees-app, permission Actions : Read and write
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -16,9 +17,10 @@ Deno.serve(async (req) => {
     if (p?.role !== 'admin') return json({ error: 'Accès non autorisé' }, 403)
     const gh = Deno.env.get('GITHUB_DISPATCH_TOKEN')
     if (!gh) return json({ error: 'Secret GITHUB_DISPATCH_TOKEN manquant dans Supabase' }, 500)
-    const { date } = await req.json().catch(() => ({}))
+    const { date, workflow } = await req.json().catch(() => ({}))
+    const file = workflow === 'import' ? 'urbantz-import.yml' : 'urbantz-retours.yml'
     const inputs: Record<string, string> = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? { date } : {}
-    const r = await fetch('https://api.github.com/repos/Victor-doneo/tournees-app/actions/workflows/urbantz-retours.yml/dispatches', {
+    const r = await fetch(`https://api.github.com/repos/Victor-doneo/tournees-app/actions/workflows/${file}/dispatches`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${gh}`, Accept: 'application/vnd.github+json', 'User-Agent': 'tournees-app' },
       body: JSON.stringify({ ref: 'main', inputs }),
