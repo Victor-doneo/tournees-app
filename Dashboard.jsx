@@ -54,7 +54,7 @@ export default function Dashboard() {
       // tours already fetched above
 
       setStats(dashboard)
-      setRecentTours(allTours.slice(0, 10))
+      setRecentTours(allTours)
     } catch (e) {
       console.error('Dashboard error:', e)
     } finally {
