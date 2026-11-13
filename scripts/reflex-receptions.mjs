@@ -38,20 +38,30 @@ async function login() {
     await page.waitForSelector('input[name=user]', { state: 'detached', timeout: 15000 }).catch(() => {})
   }
   if (await page.locator('input[name=user]').count()) throw new Error('Connexion REFLEX refusée (identifiants, adresse IP non autorisée ou flèche non trouvée)')
-  await sleep(4000)
+  await sleep(6000)
   console.log('Connecté à REFLEX')
 }
 
-// Ouvre « Réceptions » (menu principal -> Réception -> Réceptions)
+// Ouvre « Réceptions » (menu principal -> onglet Réception -> Réceptions)
 async function openSelection() {
-  const label = page.locator('div.a-outputtext', { hasText: /^Référence réception$/ })
-  if (await label.filter({ visible: true }).count()) return
-  if (!(await page.locator('.dijitTreeLabel', { hasText: /^Réceptions$/ }).first().isVisible().catch(() => false))) { await page.mouse.click(27, 18); await sleep(1500) }
-  for (let i = 0; i < 3 && !(await label.filter({ visible: true }).count()); i++) {
-    await page.locator('.dijitTreeLabel', { hasText: /^Réceptions$/ }).first().dblclick({ force: true }).catch(() => {})
-    await sleep(3000)
+  const label = page.locator('div.a-outputtext', { hasText: /^Référence réception$/ }).filter({ visible: true })
+  if (await label.count()) return
+  const treeItem = () => page.locator('.dijitTreeLabel', { hasText: /^Réceptions$/ }).filter({ visible: true }).first()
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    if (!(await treeItem().count())) {
+      await page.mouse.click(27, 18); await sleep(2000) // bouton du menu principal (en haut à gauche)
+      const acc = page.locator('.dijitAccordionText', { hasText: /^Réception$/ }).filter({ visible: true }).first()
+      if (await acc.count()) { await acc.click().catch(() => {}); await sleep(1200) }
+    }
+    if (await treeItem().count()) {
+      await treeItem().dblclick().catch(() => {})
+      for (let i = 0; i < 8 && !(await label.count()); i++) await sleep(1000)
+      if (await label.count()) { await sleep(500); return }
+    }
+    console.log(`  ouverture de Réceptions : tentative ${attempt} sans résultat`)
   }
-  if (!(await label.filter({ visible: true }).count())) throw new Error("Écran « Sélection des réceptions » introuvable")
+  await shot('menu')
+  throw new Error("Écran « Sélection des réceptions » introuvable")
 }
 
 // Saisit la référence dans le champ situé sur la même ligne que le libellé « Référence réception »
