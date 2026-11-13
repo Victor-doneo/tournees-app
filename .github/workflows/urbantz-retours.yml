@@ -43,9 +43,34 @@ jobs:
         run: |
           cp ../repo/scripts/urbantz-retours.mjs .
           node urbantz-retours.mjs
-      - name: N° de réception REFLEX (livraisons contre reprise)
+      - name: Capture d'écran en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: urbantz-erreur
+          path: work/urbantz-erreur.png
+          if-no-files-found: ignore
+  # N° de réception REFLEX : REFLEX n'accepte que certaines adresses IP, donc cette étape tourne sur un runner GitHub à IP statique.
+  # Nom du runner = variable de dépôt REFLEX_RUNNER (Settings > Secrets and variables > Actions > Variables). À défaut : runner standard (IP non autorisée).
+  reflex:
+    needs: retours
+    if: ${{ !cancelled() }}
+    runs-on: ${{ vars.REFLEX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Installer les dépendances
+        run: |
+          mkdir work && cd work && npm init -y >/dev/null
+          npm i playwright@1.49.0 @supabase/supabase-js@2 >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+      - uses: actions/checkout@v4
+        with: { path: repo }
+      - name: Adresse IP de sortie (à faire autoriser dans REFLEX)
+        run: curl -s https://api.ipify.org || true
+      - name: N° de réception REFLEX
         working-directory: work
-        continue-on-error: true
         env:
           REFLEX_USER: ${{ secrets.REFLEX_USER }}
           REFLEX_PASSWORD: ${{ secrets.REFLEX_PASSWORD }}
@@ -56,12 +81,10 @@ jobs:
         run: |
           cp ../repo/scripts/reflex-receptions.mjs .
           node reflex-receptions.mjs
-      - name: Capture d'écran en cas d'échec
+      - name: Captures en cas d'échec
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: urbantz-erreur
-          path: |
-            work/urbantz-erreur.png
-            work/reflex-*.png
+          name: reflex-erreur
+          path: work/reflex-*.png
           if-no-files-found: ignore
