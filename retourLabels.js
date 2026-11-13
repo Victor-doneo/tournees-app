@@ -11,6 +11,7 @@ function labelHtml(r) {
     <div class="code">${esc(r.barcode)}</div>
     <div class="item">${esc(r.item_name || '')}<br><small>${esc((r.item_description || '').slice(0, 90))}</small></div>
     <div class="cust"><b>${esc(r.customer_name || '')}</b><br>${esc(r.address || '')}<br>${esc([r.zip, r.city].filter(Boolean).join(' '))}${r.customer_phone ? '<br>Tél. ' + esc(r.customer_phone) : ''}</div>
+    ${r.reflex_reception ? `<div class="rx">Réception REFLEX : <b>${esc(r.reflex_reception)}</b></div>` : ''}
     <div class="reason">${esc(r.reason || '')}</div>
   </div>`
 }
@@ -27,6 +28,7 @@ export function printLabels(rows) {
     .code{text-align:center;font:bold 16pt monospace;letter-spacing:1px}
     .item{font-size:12pt}.item small{font-size:9pt;color:#333}
     .cust{font-size:13pt;border:1.5px solid #000;padding:3mm;flex:1}
+    .rx{text-align:center;font-size:13pt}
     .reason{text-align:center;font:bold 14pt Arial;border:2px solid #000;padding:2mm}
   </style></head><body>${rows.map(labelHtml).join('')}<script>onload=()=>setTimeout(()=>print(),300)</script></body></html>`)
   w.document.close()

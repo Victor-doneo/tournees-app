@@ -43,10 +43,25 @@ jobs:
         run: |
           cp ../repo/scripts/urbantz-retours.mjs .
           node urbantz-retours.mjs
+      - name: N° de réception REFLEX (livraisons contre reprise)
+        working-directory: work
+        continue-on-error: true
+        env:
+          REFLEX_USER: ${{ secrets.REFLEX_USER }}
+          REFLEX_PASSWORD: ${{ secrets.REFLEX_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATE: ${{ inputs.date }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: |
+          cp ../repo/scripts/reflex-receptions.mjs .
+          node reflex-receptions.mjs
       - name: Capture d'écran en cas d'échec
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: urbantz-erreur
-          path: work/urbantz-erreur.png
+          path: |
+            work/urbantz-erreur.png
+            work/reflex-*.png
           if-no-files-found: ignore

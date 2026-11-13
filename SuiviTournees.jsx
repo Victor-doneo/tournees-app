@@ -108,7 +108,7 @@ export default function SuiviTournees({ readOnly = false }) {
         <table>
           <thead><tr>
             {!readOnly && <th><input type="checkbox" checked={allSel} onChange={() => setSel(s => { const n = new Set(s); list.forEach(r => allSel ? n.delete(r.id) : n.add(r.id)); return n })} /></th>}
-            <th>Code-barres</th><th>Article</th><th>Client</th><th>Motif</th><th>Réception</th><th>Imprimé</th></tr></thead>
+            <th>Code-barres</th><th>Article</th><th>Client</th><th>Motif</th><th>N° réception REFLEX</th><th>Réception</th><th>Imprimé</th></tr></thead>
           <tbody>{list.map(r => (
             <tr key={r.id}>
               {!readOnly && <td><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>}
@@ -116,6 +116,7 @@ export default function SuiviTournees({ readOnly = false }) {
               <td>{r.item_name}<div style={{ color: 'var(--gray-400)', fontSize: 12 }}>{(r.item_description || '').slice(0, 60)}</div></td>
               <td>{r.customer_name}<div style={{ color: 'var(--gray-400)', fontSize: 12 }}>{[r.zip, r.city].filter(Boolean).join(' ')}</div></td>
               <td><span className="badge badge-orange">{r.reason}</span></td>
+              <td>{r.reflex_reception ? <b>{r.reflex_reception}</b> : (/contre reprise/i.test(r.reason || '') ? <span style={{ color: 'var(--gray-400)', fontSize: 12 }} title={r.reflex_note || ''}>{r.reflex_note || 'à venir'}</span> : '—')}</td>
               <td>{r.received_at ? <span className="badge badge-green">{hhmm(r.received_at)}</span> : readOnly ? <span style={{ color: 'var(--gray-400)' }}>En attente</span> : <button className="btn btn-secondary btn-sm" onClick={() => receive([r])}>Accuser réception</button>}</td>
               <td>{r.printed_at ? hhmm(r.printed_at) : '—'}</td>
             </tr>))}</tbody>
