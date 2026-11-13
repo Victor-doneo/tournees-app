@@ -8,6 +8,10 @@ on:
       date:
         description: 'Date des tâches (AAAA-MM-JJ), vide = aujourd’hui'
         required: false
+      auto:
+        description: 'Lancement planifié (respecte les horaires)'
+        type: boolean
+        default: false
       dry_run:
         description: "Essai à blanc (n'écrit rien)"
         type: boolean
@@ -35,7 +39,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DATE: ${{ inputs.date }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
-          FORCE: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && !inputs.auto && '1' || '' }}
         run: |
           cp ../repo/scripts/urbantz-retours.mjs .
           node urbantz-retours.mjs
