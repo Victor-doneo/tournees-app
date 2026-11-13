@@ -49,7 +49,12 @@ async function openSelection() {
   const treeItem = () => page.locator('.dijitTreeLabel', { hasText: /^Réceptions$/ }).filter({ visible: true }).first()
   for (let attempt = 1; attempt <= 4; attempt++) {
     if (!(await treeItem().count())) {
-      await page.mouse.click(27, 18); await sleep(2000) // bouton du menu principal (en haut à gauche)
+      // Icône du menu principal (chariot bleu, en haut à gauche) : on la cherche dans la page, sinon position fixe
+      const cands = await page.evaluate(() => [...document.querySelectorAll('button, [role=button], .dijitButton, img, span, div')].filter(e => { const r = e.getBoundingClientRect(); return e.offsetParent !== null && r.y < 40 && r.x < 70 && r.width > 8 && r.width < 70 && r.height > 8 && r.height < 40 }).map(e => { const r = e.getBoundingClientRect(); return { tag: e.tagName, cls: String(e.className).slice(0, 60), x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } }))
+      if (attempt === 1) console.log('  éléments en haut à gauche :', JSON.stringify(cands.slice(0, 8)))
+      const pick = cands.find(c => c.tag === 'BUTTON') || cands.find(c => /button/i.test(c.cls)) || cands[0]
+      if (pick) await page.mouse.click(pick.x, pick.y); else await page.mouse.click(27, 18)
+      await sleep(2000)
       const acc = page.locator('.dijitAccordionText', { hasText: /^Réception$/ }).filter({ visible: true }).first()
       if (await acc.count()) { await acc.click().catch(() => {}); await sleep(1200) }
     }
@@ -61,6 +66,7 @@ async function openSelection() {
     console.log(`  ouverture de Réceptions : tentative ${attempt} sans résultat`)
   }
   await shot('menu')
+  console.log('  textes visibles :', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.dijitTreeLabel, .dijitAccordionText, .dijitMenuItemLabel')].filter(e => e.offsetParent !== null).map(e => e.textContent.trim()).slice(0, 25))))
   throw new Error("Écran « Sélection des réceptions » introuvable")
 }
 
