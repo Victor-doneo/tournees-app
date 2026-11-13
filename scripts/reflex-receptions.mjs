@@ -44,7 +44,7 @@ async function login() {
 
 // Ouvre « Réceptions » (menu principal -> onglet Réception -> Réceptions)
 async function openSelection() {
-  const label = page.locator('div.a-outputtext', { hasText: /^Référence réception$/ }).filter({ visible: true })
+  const label = page.locator('div.a-outputtext', { hasText: /Référence\s+réception/ }).filter({ visible: true })
   if (await label.count()) return
   const treeItem = () => page.locator('.dijitTreeLabel', { hasText: /^Réceptions$/ }).filter({ visible: true }).first()
   for (let attempt = 1; attempt <= 4; attempt++) {
@@ -59,9 +59,11 @@ async function openSelection() {
       if (await acc.count()) { await acc.click().catch(() => {}); await sleep(1200) }
     }
     if (await treeItem().count()) {
-      await treeItem().dblclick().catch(() => {})
-      for (let i = 0; i < 8 && !(await label.count()); i++) await sleep(1000)
+      // un clic simple suffit en général ; si rien ne s'ouvre, double clic
+      if (attempt % 2 === 1) await treeItem().click().catch(() => {}); else await treeItem().dblclick().catch(() => {})
+      for (let i = 0; i < 12 && !(await label.count()); i++) await sleep(1000)
       if (await label.count()) { await sleep(500); return }
+      console.log('  après le clic, textes a-outputtext visibles :', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.a-outputtext, .dijitDialogTitle, .dijitTitlePaneTextNode')].filter(e => e.offsetParent !== null).map(e => e.textContent.trim().slice(0, 40)).slice(0, 15))))
     }
     console.log(`  ouverture de Réceptions : tentative ${attempt} sans résultat`)
   }
