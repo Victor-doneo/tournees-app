@@ -4,7 +4,7 @@
 import { chromium } from 'playwright'
 import { createClient } from '@supabase/supabase-js'
 
-const { REFLEX_USER, REFLEX_PASSWORD, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DATE, DRY_RUN } = process.env
+const { REFLEX_USER, REFLEX_PASSWORD, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DATE, DRY_RUN, BROWSER_CHANNEL } = process.env
 for (const [k, v] of Object.entries({ REFLEX_USER, REFLEX_PASSWORD, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY })) if (!v) { console.log(`Secret manquant : ${k} — étape ignorée`); process.exit(0) }
 
 const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).map(x => [x.type, x.value]))
@@ -16,7 +16,8 @@ if (error) throw error
 console.log(`${todo.length} colis « livraison contre reprise » sans n° de réception pour le ${day}`)
 if (!todo.length) process.exit(0)
 
-const browser = await chromium.launch()
+// BROWSER_CHANNEL=chrome : utilise le Chrome installé sur le PC (évite de télécharger le navigateur de Playwright)
+const browser = await chromium.launch(BROWSER_CHANNEL ? { channel: BROWSER_CHANNEL } : {})
 const page = await (await browser.newContext({ locale: 'fr-FR', viewport: { width: 1600, height: 900 } })).newPage()
 const shot = async n => page.screenshot({ path: `reflex-${n}.png`, fullPage: true }).catch(() => {})
 const sleep = ms => page.waitForTimeout(ms)
