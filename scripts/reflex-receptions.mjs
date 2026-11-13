@@ -26,8 +26,18 @@ async function login() {
   await page.goto('https://ereflex.cchezvous.fr/reflex/env/production', { waitUntil: 'domcontentloaded' })
   await page.locator('input[name=user]').fill(REFLEX_USER)
   await page.locator('input[name=password]').fill(REFLEX_PASSWORD)
-  await page.locator('a').first().dblclick() // la connexion demande un double clic sur la flèche
-  await page.waitForSelector('input[name=user]', { state: 'detached', timeout: 30000 })
+  // La connexion demande un double clic sur la flèche verte, située juste à droite du champ du mot de passe
+  const box = await page.locator('input[name=password]').boundingBox()
+  for (const dx of [24, 18, 30, 12, 36]) {
+    await page.mouse.dblclick(box.x + box.width + dx, box.y + box.height / 2)
+    const gone = await page.waitForSelector('input[name=user]', { state: 'detached', timeout: 6000 }).then(() => true).catch(() => false)
+    if (gone) break
+  }
+  if (await page.locator('input[name=user]').count()) {
+    await page.locator('input[name=password]').press('Enter')
+    await page.waitForSelector('input[name=user]', { state: 'detached', timeout: 15000 }).catch(() => {})
+  }
+  if (await page.locator('input[name=user]').count()) throw new Error('Connexion REFLEX refusée (identifiants, adresse IP non autorisée ou flèche non trouvée)')
   await sleep(4000)
   console.log('Connecté à REFLEX')
 }
