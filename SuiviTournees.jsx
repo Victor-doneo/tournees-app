@@ -57,8 +57,9 @@ export default function SuiviTournees({ readOnly = false }) {
     const hasLabels = t => (labelsByTour[refOf(t)] || []).length > 0
     const loadMin = t => toMin(t.urbantz_hub_depart) ?? (toMin(t.heure_premiere_livraison) != null ? toMin(t.heure_premiere_livraison) - 60 : null)
     const should = isSaturday ? [] : tours.filter(t => hasLabels(t) && loadMin(t) != null && loadMin(t) <= LOAD_LIMIT)
-    const done = t => !!t.heure_retour || t.status === 'completed'
-    return { should, back: should.filter(done), missing: should.filter(t => !done(t)) }
+    const done = t => !!t.heure_retour
+    const detail = should.map(t => { const l = labelsByTour[refOf(t)] || []; const lm = loadMin(t); return { t, nom: refOf(t), charge: lm == null ? '—' : `${String(Math.floor(lm / 60)).padStart(2, '0')}:${String(lm % 60).padStart(2, '0')}`, src: t.urbantz_hub_depart ? 'départ entrepôt' : '1re livraison − 1 h', recus: l.filter(x => x.received_at).length, total: l.length, retour: t.heure_retour, back: done(t) } })
+    return { should, back: should.filter(done), missing: should.filter(t => !done(t)), detail }
   }, [tours, labelsByTour, isSaturday])
 
   async function toggleRetard(tour) {
@@ -189,6 +190,10 @@ export default function SuiviTournees({ readOnly = false }) {
                   ))}
                 </div>
                 {retourStats.missing.length > 0 && <div style={{ fontSize: 13, marginTop: 10 }}><b>Non rentrées :</b> {retourStats.missing.map(refOf).join(', ')}</div>}
+                <details style={{ marginTop: 10, fontSize: 13 }}><summary style={{ cursor: 'pointer' }}>Voir le détail des {retourStats.detail.length} tournées</summary>
+                  <div className="table-wrap"><table className="table"><thead><tr><th>Tournée</th><th>Chargement</th><th>Colis reçus</th><th>Retour</th></tr></thead><tbody>
+                    {retourStats.detail.map(r => <tr key={r.t.id}><td>{r.nom}</td><td>{r.charge} <span style={{ color: 'var(--gray-400)', fontSize: 11 }}>({r.src})</span></td><td>{r.recus}/{r.total}</td><td>{r.back ? <span className="badge badge-green">{hhmm(r.retour)}</span> : <span className="badge badge-gray">Non rentrée</span>}</td></tr>)}
+                  </tbody></table></div></details>
                 <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 8 }}>Tournées chargées jusqu'à 07h30 avec des collectes ou livraisons impossibles : retour attendu le jour même.</div>
               </>}
             </div>
