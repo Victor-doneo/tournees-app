@@ -59,7 +59,8 @@ export default function SuiviTournees({ readOnly = false }) {
     const should = isSaturday ? [] : tours.filter(t => hasLabels(t) && loadMin(t) != null && loadMin(t) <= LOAD_LIMIT)
     const done = t => !!t.heure_retour
     const detail = should.map(t => { const l = labelsByTour[refOf(t)] || []; const lm = loadMin(t); return { t, nom: refOf(t), charge: lm == null ? '—' : `${String(Math.floor(lm / 60)).padStart(2, '0')}:${String(lm % 60).padStart(2, '0')}`, src: '1re livraison', recus: l.filter(x => x.received_at).length, total: l.length, retour: t.heure_retour, back: done(t) } })
-    return { should, back: should.filter(done), missing: should.filter(t => !done(t)), detail }
+    const extra = tours.filter(t => done(t) && !should.includes(t))
+    return { should, extra, back: should.filter(done), missing: should.filter(t => !done(t)), detail }
   }, [tours, labelsByTour, isSaturday])
 
   async function toggleRetard(tour) {
@@ -185,7 +186,7 @@ export default function SuiviTournees({ readOnly = false }) {
               <div style={{ fontWeight: 700, marginBottom: 8 }}>Respect du retour des tournées</div>
               {isSaturday ? <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>Samedi : les tournées ne sont pas tenues de rentrer.</div> : <>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
-                  {[['Devaient rentrer', retourStats.should.length, 'var(--accent)'], ['Rentrées', retourStats.back.length, 'var(--green, #16a34a)'], ['Non rentrées', retourStats.missing.length, 'var(--red)'], ['Taux de retour', retourStats.should.length ? Math.round(100 * retourStats.back.length / retourStats.should.length) + ' %' : '—', 'var(--gray-500)']].map(([l, v, c]) => (
+                  {[['Devaient rentrer', retourStats.should.length, 'var(--accent)'], ['Rentrées (attendues)', retourStats.back.length, 'var(--green, #16a34a)'], ['Non rentrées', retourStats.missing.length, 'var(--red)'], ['Rentrées en plus', retourStats.extra.length, 'var(--gray-500)'], ['Taux de retour (sur attendues)', retourStats.should.length ? Math.round(100 * retourStats.back.length / retourStats.should.length) + ' %' : '—', 'var(--gray-500)']].map(([l, v, c]) => (
                     <div key={l}><div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 26, color: c }}>{v}</div><div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{l}</div></div>
                   ))}
                 </div>
