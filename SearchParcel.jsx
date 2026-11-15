@@ -14,7 +14,7 @@ export default function SearchParcel() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const basePath = location.pathname.startsWith('/admin') ? '/admin' : '/operator'
+  const basePath = location.pathname.startsWith('/admin') ? '/admin' : location.pathname.startsWith('/partner') ? '/partner' : '/operator'
 
   const [query, setQuery] = useState(searchParams.get('barcode') || '')
   const [results, setResults] = useState([])
@@ -66,7 +66,7 @@ export default function SearchParcel() {
   }
 
   function goToDemande(d) {
-    navigate(`${basePath}/demandes?open=${d.id}`)
+    navigate(basePath === '/partner' ? `/partner?open=${d.id}` : `${basePath}/demandes?open=${d.id}`)
   }
 
   function resultBadge(type) {

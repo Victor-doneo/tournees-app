@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
-import { LogOut, ClipboardList, AlertTriangle, LayoutGrid, Mail, Activity } from 'lucide-react'
+import { LogOut, ClipboardList, AlertTriangle, LayoutGrid, Mail, Activity, Search } from 'lucide-react'
 
 export default function PartnerLayout() {
   const { profile, signOut } = useAuth()
@@ -35,6 +35,10 @@ export default function PartnerLayout() {
           <NavLink to="/partner/defaillances" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
             <AlertTriangle size={16} />
             Défaillances
+          </NavLink>
+          <NavLink to="/partner/search-parcel" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+            <Search size={16} />
+            Recherche BP
           </NavLink>
           {profile?.can_view_tour_tracking && (
             <NavLink to="/partner/suivi-tournees" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>

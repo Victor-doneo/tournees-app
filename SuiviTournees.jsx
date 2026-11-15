@@ -29,11 +29,10 @@ export default function SuiviTournees({ readOnly = false }) {
     let tl = []
     if (dateData) {
       if (!readOnly) await syncTourReturns(day) // tout réceptionné => tournée revenue
-      const { data } = await supabase
-        .from('tours')
-        .select('id, name, status, retard, heure_retour, reference_id, type_livraison, heure_premiere_livraison, code_postal_premiere_livraison, tours_references(name)')
-        .eq('delivery_date_id', dateData.id)
-        .order('heure_premiere_livraison', { ascending: true, nullsFirst: false })
+      const cols = 'id, name, status, retard, heure_retour, reference_id, type_livraison, heure_premiere_livraison, code_postal_premiere_livraison, tours_references(name)'
+      const q = c => supabase.from('tours').select(c).eq('delivery_date_id', dateData.id).order('heure_premiere_livraison', { ascending: true, nullsFirst: false })
+      let { data, error } = await q(cols + ', urbantz_hub_depart')
+      if (error) ({ data } = await q(cols)) // migration Urbantz non lancée
       tl = data || []
     }
     const { data: lab } = await supabase.from('return_labels').select('*').eq('task_date', day).order('customer_name')
@@ -48,6 +47,19 @@ export default function SuiviTournees({ readOnly = false }) {
   }, [labels])
   const knownCodes = new Set(tours.map(refOf))
   const orphanLabels = labels.filter(l => !l.tour_code || !knownCodes.has(l.tour_code))
+
+  // Règle de retour : une tournée chargée au plus tard à 07h30 doit rentrer le jour même si elle a des collectes / livraisons impossibles.
+  // Le samedi, aucune tournée n'est tenue de rentrer. Heure de chargement = départ entrepôt Urbantz, à défaut 1re livraison <= 08h00.
+  const LOAD_LIMIT = 7 * 60 + 30
+  const toMin = v => { const m = /^(\d{1,2}):(\d{2})/.exec(v || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : null }
+  const isSaturday = new Date(day + 'T12:00:00').getDay() === 6
+  const retourStats = useMemo(() => {
+    const hasLabels = t => (labelsByTour[refOf(t)] || []).length > 0
+    const loadMin = t => toMin(t.urbantz_hub_depart) ?? (toMin(t.heure_premiere_livraison) != null ? toMin(t.heure_premiere_livraison) - 60 : null)
+    const should = isSaturday ? [] : tours.filter(t => hasLabels(t) && loadMin(t) != null && loadMin(t) <= LOAD_LIMIT)
+    const done = t => !!t.heure_retour || t.status === 'completed'
+    return { should, back: should.filter(done), missing: should.filter(t => !done(t)) }
+  }, [tours, labelsByTour, isSaturday])
 
   async function toggleRetard(tour) {
     setUpdating(tour.id)
@@ -166,6 +178,19 @@ export default function SuiviTournees({ readOnly = false }) {
                   <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{l}</div>
                 </div>
               ))}
+            </div>
+
+            <div style={{ background: 'var(--white)', borderRadius: 'var(--radius)', border: '1px solid var(--gray-200)', padding: '14px 16px', boxShadow: 'var(--shadow-sm)' }}>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Respect du retour des tournées</div>
+              {isSaturday ? <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>Samedi : les tournées ne sont pas tenues de rentrer.</div> : <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
+                  {[['Devaient rentrer', retourStats.should.length, 'var(--accent)'], ['Rentrées', retourStats.back.length, 'var(--green, #16a34a)'], ['Non rentrées', retourStats.missing.length, 'var(--red)'], ['Taux de retour', retourStats.should.length ? Math.round(100 * retourStats.back.length / retourStats.should.length) + ' %' : '—', 'var(--gray-500)']].map(([l, v, c]) => (
+                    <div key={l}><div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 26, color: c }}>{v}</div><div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{l}</div></div>
+                  ))}
+                </div>
+                {retourStats.missing.length > 0 && <div style={{ fontSize: 13, marginTop: 10 }}><b>Non rentrées :</b> {retourStats.missing.map(refOf).join(', ')}</div>}
+                <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 8 }}>Tournées chargées jusqu'à 07h30 avec des collectes ou livraisons impossibles : retour attendu le jour même.</div>
+              </>}
             </div>
 
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
