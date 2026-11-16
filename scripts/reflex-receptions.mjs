@@ -18,7 +18,10 @@ if (!todo.length) process.exit(0)
 
 // BROWSER_CHANNEL=chrome : utilise le Chrome installé sur le PC (évite de télécharger le navigateur de Playwright)
 const browser = await chromium.launch({ ...(BROWSER_CHANNEL ? { channel: BROWSER_CHANNEL } : {}), ...(process.env.HEADED ? { headless: false, slowMo: 150 } : {}) })
-const page = await (await browser.newContext({ locale: 'fr-FR', viewport: { width: 1600, height: 900 } })).newPage()
+const context = await browser.newContext({ locale: 'fr-FR', viewport: { width: 1600, height: 900 } })
+let page = await context.newPage()
+// Si REFLEX ouvre l'écran dans une nouvelle fenêtre, on bascule dessus
+context.on('page', async p => { await p.waitForLoadState('domcontentloaded').catch(() => {}); console.log('  nouvelle fenêtre ouverte :', p.url()); page = p })
 const shot = async n => page.screenshot({ path: `reflex-${n}.png`, fullPage: true }).catch(() => {})
 const sleep = ms => page.waitForTimeout(ms)
 
@@ -44,7 +47,7 @@ async function login() {
 
 // Ouvre « Réceptions » (menu principal -> onglet Réception -> Réceptions)
 async function openSelection() {
-  const label = page.locator('div.a-outputtext', { hasText: /Référence\s+réception/ }).filter({ visible: true })
+  const label = { count: () => page.locator('div.a-outputtext', { hasText: /Référence\s+réception/ }).filter({ visible: true }).count() }
   if (await label.count()) return
   const treeItem = () => page.locator('.dijitTreeLabel', { hasText: /^Réceptions$/ }).filter({ visible: true }).first()
   for (let attempt = 1; attempt <= 4; attempt++) {
@@ -66,10 +69,14 @@ async function openSelection() {
       if (!b) continue
       console.log(`  élément « Réceptions » #${k} à (${Math.round(b.x)}, ${Math.round(b.y)}), tentative ${attempt}`)
       await it.scrollIntoViewIfNeeded().catch(() => {})
-      const mode = attempt % 3
-      if (mode !== 0) await it.dblclick().catch(() => {}) // double clic d'abord (REFLEX n'ouvre pas au simple clic)
-      else { await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await page.mouse.up(); await sleep(150); await page.mouse.down(); await page.mouse.up() }
-      for (let i = 0; i < 10 && !(await label.count()); i++) await sleep(1000)
+      const row = it.locator('xpath=ancestor-or-self::*[contains(@class,"dijitTreeRow")][1]')
+      const target = (await row.count()) ? row : it
+      const mode = attempt % 4
+      if (mode === 1) await target.dblclick({ delay: 120 }).catch(() => {})
+      else if (mode === 2) { await it.click().catch(() => {}); await sleep(400); await page.keyboard.press('Enter') }
+      else if (mode === 3) await it.dblclick({ delay: 200 }).catch(() => {})
+      else { await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await sleep(80); await page.mouse.up(); await sleep(120); await page.mouse.down(); await sleep(80); await page.mouse.up() }
+      for (let i = 0; i < 25 && !(await label.count()); i++) await sleep(1000) // le réseau peut être lent
       if (await label.count()) { await sleep(500); return }
       await shot(`menu-${attempt}-${k}`)
     }
