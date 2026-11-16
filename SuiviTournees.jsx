@@ -67,13 +67,13 @@ export default function SuiviTournees({ readOnly = false }) {
   }, [tours, labelsByTour, isSaturday])
 
   // Anomalies : tournée rentrée mais des colis à retourner n'ont pas d'accusé de réception (rentrée avec moins de colis que prévu).
-  // Elles sont recherchées sur les 14 derniers jours (jours passés compris) tant que les colis ne sont pas réceptionnés.
+  // Elles sont recherchées depuis le 16/11/2026 (jours passés compris) tant que les colis ne sont pas réceptionnés.
   // Une tournée sans colis à retourner n'est jamais signalée.
+  const ANOMALY_FROM = '2026-11-16'
   const [anomalies, setAnomalies] = useState([])
   useEffect(() => { loadAnomalies() }, [day, labels])
   async function loadAnomalies() {
-    const d0 = new Date(todayStr() + 'T12:00:00'); d0.setDate(d0.getDate() - 14)
-    const from = [d0.toISOString().slice(0, 10), day].sort()[0]
+    const from = ANOMALY_FROM // seules les tournées à partir du 16/11/2026 sont contrôlées (évite de remonter l'historique)
     const to = [todayStr(), day].sort()[1]
     const { data: ls } = await supabase.from('return_labels').select('task_date, tour_code, barcode, customer_name, received_at').gte('task_date', from).lte('task_date', to).limit(5000)
     const withMissing = new Set((ls || []).filter(l => !l.received_at).map(l => `${l.task_date}|${l.tour_code}`))
@@ -223,7 +223,7 @@ export default function SuiviTournees({ readOnly = false }) {
 
             {anomalies.length > 0 && (
               <div style={{ background: '#fff5f5', borderRadius: 'var(--radius)', border: '1px solid var(--red)', padding: '14px 16px' }}>
-                <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={16} /> {anomalies.length} tournée(s) rentrée(s) avec des colis non réceptionnés (14 derniers jours)</div>
+                <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={16} /> {anomalies.length} tournée(s) rentrée(s) avec des colis non réceptionnés (depuis le 16/11)</div>
                 {anomalies.map(a => (
                   <div key={a.t.id} style={{ fontSize: 13, marginTop: 6 }}>
                     <b>{refOf(a.t)}</b> — {new Date(a.dt + 'T12:00:00').toLocaleDateString('fr-FR')} — rentrée à {hhmm(a.t.heure_retour)} — {a.ls.length - a.missing.length}/{a.ls.length} colis réceptionnés
