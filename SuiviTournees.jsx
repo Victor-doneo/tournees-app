@@ -66,6 +66,13 @@ export default function SuiviTournees({ readOnly = false }) {
     return { should, extra, back: should.filter(done), missing: should.filter(t => !done(t)), detail }
   }, [tours, labelsByTour, isSaturday])
 
+  // Anomalies : tournée rentrée mais des colis à retourner n'ont pas d'accusé de réception (rentrée avec moins de colis que prévu).
+  // Une tournée sans colis à retourner n'est jamais signalée.
+  const anomalies = useMemo(() => tours.filter(t => !!t.heure_retour).map(t => {
+    const ls = labelsByTour[refOf(t)] || []
+    return { t, ls, missing: ls.filter(l => !l.received_at) }
+  }).filter(a => a.ls.length > 0 && a.missing.length > 0), [tours, labelsByTour])
+
   async function toggleRetard(tour) {
     setUpdating(tour.id)
     const { error } = await supabase.from('tours').update({ retard: !tour.retard }).eq('id', tour.id)
@@ -186,7 +193,7 @@ export default function SuiviTournees({ readOnly = false }) {
             </div>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 12 }}>
-              <b style={{ color: 'var(--gray-500)' }}>Automatismes :</b>
+              <b style={{ color: 'var(--gray-500)' }}>Automatisations :</b>
               {[['urbantz_import', 'Heures Urbantz'], ['urbantz_retours', 'Retours Urbantz'], ['reflex', 'Réceptions REFLEX']].map(([k, nom]) => {
                 const j = jobs.find(x => x.job === k)
                 const age = j ? (Date.now() - new Date(j.last_run).getTime()) / 36e5 : null
@@ -195,6 +202,18 @@ export default function SuiviTournees({ readOnly = false }) {
                 return <span key={k} className="badge badge-gray" title={j?.message || ''} style={{ color }}>● {nom} : {j && !j.ok ? 'ÉCHEC ' : ''}{when}</span>
               })}
             </div>
+
+            {anomalies.length > 0 && (
+              <div style={{ background: '#fff5f5', borderRadius: 'var(--radius)', border: '1px solid var(--red)', padding: '14px 16px' }}>
+                <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={16} /> {anomalies.length} tournée(s) rentrée(s) avec des colis non réceptionnés</div>
+                {anomalies.map(a => (
+                  <div key={a.t.id} style={{ fontSize: 13, marginTop: 6 }}>
+                    <b>{refOf(a.t)}</b> — rentrée à {hhmm(a.t.heure_retour)} — {a.ls.length - a.missing.length}/{a.ls.length} colis réceptionnés
+                    <div style={{ color: 'var(--gray-600)', fontSize: 12 }}>Manquants : {a.missing.map(l => `${l.barcode}${l.customer_name ? ' (' + l.customer_name + ')' : ''}`).join(', ')}</div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div style={{ background: 'var(--white)', borderRadius: 'var(--radius)', border: '1px solid var(--gray-200)', padding: '14px 16px', boxShadow: 'var(--shadow-sm)' }}>
               <div style={{ fontWeight: 700, marginBottom: 8 }}>Respect du retour des tournées</div>

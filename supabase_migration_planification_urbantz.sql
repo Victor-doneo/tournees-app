@@ -29,3 +29,13 @@ $$);
 
 -- Vérifier : select jobname, schedule, active from cron.job;
 -- Historique : select * from cron.job_run_details order by start_time desc limit 10;
+
+-- ── Mail quotidien des anomalies de retour (fonction send-return-anomalies, à déployer avec Verify JWT désactivé) ──
+-- Tous les jours à 19h Paris (18h UTC en hiver, 17h UTC en été : 18h UTC, le mail part à 19h ou 20h selon la saison)
+select cron.unschedule(jobid) from cron.job where jobname = 'anomalies-retour-tournees';
+select cron.schedule('anomalies-retour-tournees', '0 18 * * 1-6', $$
+  select net.http_post(
+    url := 'https://<REF>.supabase.co/functions/v1/send-return-anomalies',
+    headers := '{"Content-Type":"application/json","x-cron-secret":"<CRON_SECRET>"}'::jsonb,
+    body := '{}'::jsonb);
+$$);
