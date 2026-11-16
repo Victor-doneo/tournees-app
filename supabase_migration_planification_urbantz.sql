@@ -30,3 +30,20 @@ $$);
 -- Vérifier : select jobname, schedule, active from cron.job;
 -- Historique : select * from cron.job_run_details order by start_time desc limit 10;
 
+-- ── Mail quotidien « ANOMALIES RETOUR TOURNÉES » à 19h (heure de Paris), lundi-samedi ──
+-- La fonction send-return-anomalies doit être déployée et le secret CRON_SECRET créé (Edge Functions > Secrets).
+-- pg_cron est en UTC : on lance à 17h ET 18h UTC, la fonction ne s'exécute qu'à 19h de Paris (été comme hiver) grâce à "only_hour".
+-- Remplacer <REF> (référence du projet) et <CRON_SECRET> (la même valeur que le secret).
+select cron.unschedule(jobid) from cron.job where jobname in ('anomalies-retour-tournees-ete', 'anomalies-retour-tournees-hiver');
+select cron.schedule('anomalies-retour-tournees-ete', '0 17 * * 1-6', $$
+  select net.http_post(
+    url := 'https://<REF>.supabase.co/functions/v1/send-return-anomalies',
+    headers := '{"Content-Type":"application/json","x-cron-secret":"<CRON_SECRET>"}'::jsonb,
+    body := '{"only_hour":19}'::jsonb);
+$$);
+select cron.schedule('anomalies-retour-tournees-hiver', '0 18 * * 1-6', $$
+  select net.http_post(
+    url := 'https://<REF>.supabase.co/functions/v1/send-return-anomalies',
+    headers := '{"Content-Type":"application/json","x-cron-secret":"<CRON_SECRET>"}'::jsonb,
+    body := '{"only_hour":19}'::jsonb);
+$$);

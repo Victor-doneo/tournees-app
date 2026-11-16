@@ -5,7 +5,7 @@
 //   3. Colis attendus toujours non réceptionnés depuis plus de OVERDUE_DAYS jours, avec leur tournée
 // Seules les tournées à partir du 16/11/2026 sont prises en compte.
 // Corps (facultatif) : { date?: 'AAAA-MM-JJ' } (défaut : aujourd'hui, heure de Paris).
-// Appelée par l'application juste après l'envoi du rapport (Tours.jsx), avec la session de l'administrateur ; x-cron-secret accepté aussi.
+// Appelée chaque jour à 19h (heure de Paris) par pg_cron avec l'en-tête x-cron-secret, ou à la main par un administrateur.
 // Secrets : RESEND_API_KEY, FROM_EMAIL (déjà configurés). Destinataires : table email_recipients (active = true).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -36,6 +36,11 @@ Deno.serve(async (req) => {
       if (p?.role !== 'admin') return json({ error: 'Accès non autorisé' }, 403)
     }
     const body = await req.json().catch(() => ({}))
+    // Envoi planifié (pg_cron lance la fonction à 17h et 18h UTC) : on n'agit qu'à l'heure de Paris demandée, pour ne partir qu'une fois par jour
+    if (Number.isInteger(body?.only_hour)) {
+      const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
+      if (h !== body.only_hour) return json({ skipped: true, parisHour: h })
+    }
     const today = parisDay(new Date().toISOString())
     const day = /^\d{4}-\d{2}-\d{2}$/.test(body?.date || '') ? body.date : today
     if (day < FROM_DATE) return json({ day, anomalies: 0, sent: 0, note: `Avant le ${FROM_DATE}` })
