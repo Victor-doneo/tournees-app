@@ -1,19 +1,26 @@
 // Pour chaque colis « livraison contre reprise » (numéro 7 + BP), cherche dans REFLEX (Réceptions > Référence réception = BP sans le 7)
 // la ligne dont le code motif est LCR et enregistre son numéro de réception dans return_labels.reflex_reception.
-// Env : REFLEX_USER, REFLEX_PASSWORD, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY ; facultatif DATE, DRY_RUN
+// DAYS=14 : traite aussi les 14 derniers jours (rattrapage). Env : REFLEX_USER, REFLEX_PASSWORD, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY ; facultatif DATE, DRY_RUN
 import { chromium } from 'playwright'
 import { createClient } from '@supabase/supabase-js'
 
-const { REFLEX_USER, REFLEX_PASSWORD, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DATE, DRY_RUN, BROWSER_CHANNEL } = process.env
+const { REFLEX_USER, REFLEX_PASSWORD, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DATE, DAYS, DRY_RUN, BROWSER_CHANNEL } = process.env
 for (const [k, v] of Object.entries({ REFLEX_USER, REFLEX_PASSWORD, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY })) if (!v) { console.log(`Secret manquant : ${k} — étape ignorée`); process.exit(0) }
 
 const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).map(x => [x.type, x.value]))
 const day = DATE || `${p.year}-${p.month}-${p.day}`
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-const { data: todo, error } = await sb.from('return_labels').select('id, barcode').eq('task_date', day).ilike('reason', '%contre reprise%').is('reflex_reception', null)
+let q = sb.from('return_labels').select('id, barcode, task_date').ilike('reason', '%contre reprise%').is('reflex_reception', null)
+let label = day
+if (DAYS && !DATE) {
+  const from = new Date(`${day}T12:00:00Z`); from.setUTCDate(from.getUTCDate() - Number(DAYS))
+  const fromStr = from.toISOString().slice(0, 10)
+  q = q.gte('task_date', fromStr).lte('task_date', day); label = `du ${fromStr} au ${day}`
+} else q = q.eq('task_date', day)
+const { data: todo, error } = await q.order('task_date')
 if (error) throw error
-console.log(`${todo.length} colis « livraison contre reprise » sans n° de réception pour le ${day}`)
+console.log(`${todo.length} colis « livraison contre reprise » sans n° de réception ${DAYS && !DATE ? '' : 'pour le '}${label}`)
 if (!todo.length) process.exit(0)
 
 // BROWSER_CHANNEL=chrome : utilise le Chrome installé sur le PC (évite de télécharger le navigateur de Playwright)
