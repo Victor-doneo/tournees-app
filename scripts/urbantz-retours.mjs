@@ -92,6 +92,10 @@ await browser.close()
 // Règles de sélection
 const isDea = it => /(^|[^A-Z0-9])DEA([^A-Z0-9]|$)/i.test(`${it.name || ''} ${it.description || ''} ${JSON.stringify(it.metadata || {})}`)
 const stat = {}, rows = new Map()
+// Colis livrés (DELIVERED) dans n'importe quelle tâche du jour : une livraison ratée puis livrée au 2e passage n'est plus un colis à retourner
+const delivered = new Set()
+for (const t of tasks.values()) for (const it of t.items || []) if (it.barcode && it.status === 'DELIVERED') delivered.add(String(it.barcode).trim())
+let recovered = 0
 let lcrCount = 0
 for (const t of tasks.values()) {
   for (const it of t.items || []) {
@@ -99,7 +103,7 @@ for (const t of tasks.values()) {
     if (!it.barcode) continue
     let reason = null, outCode = it.barcode
     const bc = String(it.barcode).trim()
-    if (it.status === 'NOT_DELIVERED') reason = 'Livraison impossible'
+    if (it.status === 'NOT_DELIVERED') { if (delivered.has(bc)) { recovered++; continue } reason = 'Livraison impossible' }
     else if (/PICKED_UP/.test(it.status || '') && !/^NOT_/.test(it.status)) reason = isDea(it) ? null : (it.status === 'PICKED_UP' ? 'Collecté' : 'Partiellement collecté')
     // Livraison contre reprise livrée : elle doit apparaître en « collecté » sous le numéro 7 + numéro du colis livré
     if (!reason && it.status === 'DELIVERED' && lcr.has(bc) && !isDea(it)) { reason = 'Collecté (livraison contre reprise)'; outCode = '7' + bc; lcrCount++ }
@@ -115,7 +119,7 @@ for (const t of tasks.values()) {
 }
 console.log(`${tasks.size} tâches, statuts items :`, JSON.stringify(stat))
 console.log(`dont ${lcrCount} livraison(s) contre reprise livrée(s) ajoutée(s) en collecté`)
-console.log(`${rows.size} colis à retourner pour le ${day}`)
+console.log(`${rows.size} colis à retourner pour le ${day} (${recovered} livraison(s) ratée(s) finalement livrée(s) au 2e passage, ignorée(s))`)
 if (DRY_RUN) { console.log('DRY_RUN : rien écrit.'); process.exit(0) }
 if (rows.size) {
   const { error } = await sb.from('return_labels').upsert([...rows.values()], { onConflict: 'task_date,barcode' })
@@ -125,6 +129,14 @@ if (rows.size) {
     if (!rows.has(`${day}|7${bc}`)) continue
     await sb.from('return_labels').update({ reflex_reception: rec }).eq('task_date', day).eq('barcode', '7' + bc).is('reflex_reception', null)
   }
+}
+// Mise à jour : les étiquettes « Livraison impossible » créées plus tôt dans la journée pour un colis finalement livré sont supprimées (sauf si déjà réceptionnées)
+if (tasks.size && delivered.size) {
+  const { data: old } = await sb.from('return_labels').select('id, barcode, received_at').eq('task_date', day).eq('reason', 'Livraison impossible')
+  const stale = (old || []).filter(r => delivered.has(String(r.barcode).trim()) && !rows.has(`${day}|${r.barcode}`))
+  const del = stale.filter(r => !r.received_at).map(r => r.id)
+  if (del.length) { const { error: de } = await sb.from('return_labels').delete().in('id', del); if (de) throw de }
+  console.log(`${del.length} étiquette(s) supprimée(s) (colis livrés au 2e passage)${stale.length - del.length ? `, ${stale.length - del.length} déjà réceptionnée(s) conservée(s)` : ''}`)
 }
 console.log('OK')
 await report(true, `${rows.size} colis à retourner pour le ${day}`)
