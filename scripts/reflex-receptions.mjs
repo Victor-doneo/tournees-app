@@ -49,6 +49,27 @@ async function login() {
 async function openSelection() {
   const label = { count: () => page.locator('div.a-outputtext', { hasText: /Référence\s+réception/ }).filter({ visible: true }).count() }
   if (await label.count()) return
+  // Méthode 1 : zone de recherche de menu en haut à droite -> taper « Réception » puis cliquer sur l'entrée HFRE00
+  for (let attempt = 1; attempt <= 3 && !(await label.count()); attempt++) {
+    const box = await page.evaluate(() => { const c = [...document.querySelectorAll('input[type=text], input:not([type])')].filter(i => { const r = i.getBoundingClientRect(); return i.offsetParent !== null && r.y < 70 && r.x > window.innerWidth * 0.5 && r.width > 40 }).sort((a, b) => b.getBoundingClientRect().x - a.getBoundingClientRect().x)[0]; return c ? c.id || null : null })
+    if (!box) { console.log('  zone de recherche en haut à droite introuvable'); break }
+    const inp = page.locator(`[id="${box}"]`)
+    await inp.click().catch(() => {}); await inp.fill('').catch(() => {}); await inp.type('Réception', { delay: 80 }).catch(() => {})
+    await sleep(2500)
+    const hit = page.getByText(/HFRE00/).filter({ visible: true }).first()
+    if (await hit.count()) {
+      console.log(`  recherche menu : entrée trouvée (tentative ${attempt})`)
+      await hit.dblclick().catch(() => {})
+      for (let i = 0; i < 25 && !(await label.count()); i++) await sleep(1000)
+      if (await label.count()) { await sleep(500); return }
+      await hit.click().catch(() => {}); await sleep(3000)
+      if (await label.count()) { await sleep(500); return }
+    } else {
+      console.log('  recherche menu : aucune entrée HFRE00 ; textes proposés :', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.dijitMenuItem, .dijitReset[role=option], [role=option], li')].filter(e => e.offsetParent !== null).map(e => e.textContent.trim().slice(0, 50)).slice(0, 12))))
+      await shot(`recherche-menu-${attempt}`)
+    }
+  }
+  if (await label.count()) return
   const treeItem = () => page.locator('.dijitTreeLabel', { hasText: /^Réceptions$/ }).filter({ visible: true }).first()
   for (let attempt = 1; attempt <= 4; attempt++) {
     if (!(await treeItem().count())) {
