@@ -17,12 +17,14 @@ export default function Reprises() {
   async function fetchReprises() {
     setLoading(true)
 
-    const { data } = await supabase
+    // Filtre par date côté base (sinon Supabase tronque à 1000 lignes toutes dates confondues et des colis disparaissent)
+    let q = supabase
       .from('parcels')
-      .select('barcode, excluded, exclusion_reason, dea, tours(name, delivery_dates(delivery_date))')
+      .select(`barcode, excluded, exclusion_reason, dea, tours${filterDate ? '!inner' : ''}(name, delivery_dates${filterDate ? '!inner' : ''}(delivery_date))`)
       .or('exclusion_reason.eq.Reprise,exclusion_reason.eq.Livraison contre reprise')
       .eq('dea', false)
-      .order('barcode')
+    if (filterDate) q = q.eq('tours.delivery_dates.delivery_date', filterDate)
+    const { data } = await q.order('barcode').limit(5000)
 
     const filtered = (data || []).filter(p => {
       const d = p.tours?.delivery_dates?.delivery_date
