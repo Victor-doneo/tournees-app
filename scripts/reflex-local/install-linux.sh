@@ -66,12 +66,11 @@ RUN
 chmod +x "$DIR/run-reflex.sh"; chown "$USER_SVC":"$USER_SVC" "$DIR/run-reflex.sh"
 touch /var/log/superflash-reflex.log; chown "$USER_SVC":"$USER_SVC" /var/log/superflash-reflex.log
 
-# Toutes les 30 min de 11h30 à 15h30 (heure de Paris), du lundi au samedi
+# Toutes les 5 min de 7h à 20h (heure de Paris), du lundi au samedi : le script s'arrête aussitôt s'il n'y a rien à traiter,
+# donc les nouveaux colis LCR sont repris quelques minutes après leur apparition dans l'application
 cat > /etc/cron.d/superflash-reflex <<CRON
 SHELL=/bin/bash
-30 11 * * 1-6 $USER_SVC $DIR/run-reflex.sh >> /var/log/superflash-reflex.log 2>&1
-0,30 12-14 * * 1-6 $USER_SVC $DIR/run-reflex.sh >> /var/log/superflash-reflex.log 2>&1
-0,30 15 * * 1-6 $USER_SVC $DIR/run-reflex.sh >> /var/log/superflash-reflex.log 2>&1
+*/5 7-19 * * 1-6 $USER_SVC $DIR/run-reflex.sh >> /var/log/superflash-reflex.log 2>&1
 CRON
 chmod 644 /etc/cron.d/superflash-reflex
 cat > /etc/logrotate.d/superflash-reflex <<LR
