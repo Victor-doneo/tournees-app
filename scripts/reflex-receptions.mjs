@@ -127,7 +127,7 @@ async function search(bp) {
 
 // Lecture des lignes du tableau (dgrid) : jour, date, ate, code motif, quai, réception, référence...
 async function readRows(bp) {
-  return page.evaluate(bp => [...document.querySelectorAll('.dgrid-row')].filter(r => r.offsetParent !== null).map(r => [...r.querySelectorAll('td.dgrid-cell')].map(c => c.innerText.trim().replace(/\s+/g, ' '))).filter(c => c.some(x => x === bp)), bp)
+  return page.evaluate(bp => [...document.querySelectorAll('.dgrid-row')].filter(r => r.offsetParent !== null).map(r => [...r.querySelectorAll('td.dgrid-cell')].map(c => c.innerText.trim().replace(/\s+/g, ' '))).filter(c => c.some(x => x === bp || x.includes(bp))), bp)
 }
 
 async function closeResults() {
@@ -143,7 +143,12 @@ try {
     try {
       await openSelection()
       await search(bp)
-      const cells = await readRows(bp)
+      let cells = await readRows(bp)
+      for (let i = 0; i < 8 && !cells.length; i++) { await sleep(1500); cells = await readRows(bp) } // résultats parfois lents
+      if (!cells.length) {
+        await shot(`resultat-${bp}`)
+        console.log('  aucune ligne ne correspond ; lignes visibles :', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.dgrid-row')].filter(r => r.offsetParent !== null).slice(0, 5).map(r => [...r.querySelectorAll('td.dgrid-cell')].map(c => c.innerText.trim().replace(/\s+/g, ' '))))))
+      }
       // colonnes : 0 jour, 1 date, 2 ate, 3 code motif, 4 quai, 5 réception, 6 référence
       const lcr = cells.filter(c => /^LCR$/i.test(c[3] || ''))
       const toKey = d => (d || '').split('/').reverse().join('')
