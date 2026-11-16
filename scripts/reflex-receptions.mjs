@@ -17,7 +17,7 @@ console.log(`${todo.length} colis « livraison contre reprise » sans n° de ré
 if (!todo.length) process.exit(0)
 
 // BROWSER_CHANNEL=chrome : utilise le Chrome installé sur le PC (évite de télécharger le navigateur de Playwright)
-const browser = await chromium.launch(BROWSER_CHANNEL ? { channel: BROWSER_CHANNEL } : {})
+const browser = await chromium.launch({ ...(BROWSER_CHANNEL ? { channel: BROWSER_CHANNEL } : {}), ...(process.env.HEADED ? { headless: false, slowMo: 150 } : {}) })
 const page = await (await browser.newContext({ locale: 'fr-FR', viewport: { width: 1600, height: 900 } })).newPage()
 const shot = async n => page.screenshot({ path: `reflex-${n}.png`, fullPage: true }).catch(() => {})
 const sleep = ms => page.waitForTimeout(ms)
@@ -58,12 +58,21 @@ async function openSelection() {
       const acc = page.locator('.dijitAccordionText', { hasText: /^Réception$/ }).filter({ visible: true }).first()
       if (await acc.count()) { await acc.click().catch(() => {}); await sleep(1200) }
     }
-    if (await treeItem().count()) {
-      // un clic simple suffit en général ; si rien ne s'ouvre, double clic
-      if (attempt % 2 === 1) await treeItem().click().catch(() => {}); else await treeItem().dblclick().catch(() => {})
-      for (let i = 0; i < 12 && !(await label.count()); i++) await sleep(1000)
+    const items = page.locator('.dijitTreeLabel', { hasText: /^Réceptions$/ }).filter({ visible: true })
+    const n = await items.count()
+    for (let k = 0; k < n && !(await label.count()); k++) {
+      const it = items.nth(k)
+      const b = await it.boundingBox().catch(() => null)
+      if (!b) continue
+      console.log(`  élément « Réceptions » #${k} à (${Math.round(b.x)}, ${Math.round(b.y)}), tentative ${attempt}`)
+      await it.scrollIntoViewIfNeeded().catch(() => {})
+      const mode = attempt % 3
+      if (mode === 1) await it.click().catch(() => {})
+      else if (mode === 2) await it.dblclick().catch(() => {})
+      else { await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await page.mouse.up(); await sleep(150); await page.mouse.down(); await page.mouse.up() }
+      for (let i = 0; i < 10 && !(await label.count()); i++) await sleep(1000)
       if (await label.count()) { await sleep(500); return }
-      console.log('  après le clic, textes a-outputtext visibles :', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.a-outputtext, .dijitDialogTitle, .dijitTitlePaneTextNode')].filter(e => e.offsetParent !== null).map(e => e.textContent.trim().slice(0, 40)).slice(0, 15))))
+      await shot(`menu-${attempt}-${k}`)
     }
     console.log(`  ouverture de Réceptions : tentative ${attempt} sans résultat`)
   }
