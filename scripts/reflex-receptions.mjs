@@ -149,6 +149,7 @@ try {
         await shot(`resultat-${bp}`)
         console.log('  aucune ligne ne correspond ; lignes visibles :', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.dgrid-row')].filter(r => r.offsetParent !== null).slice(0, 5).map(r => [...r.querySelectorAll('td.dgrid-cell')].map(c => c.innerText.trim().replace(/\s+/g, ' '))))))
       }
+      console.log('  lignes trouvées :', JSON.stringify(cells))
       // colonnes : 0 jour, 1 date, 2 ate, 3 code motif, 4 quai, 5 réception, 6 référence
       const lcr = cells.filter(c => /^LCR$/i.test(c[3] || ''))
       const toKey = d => (d || '').split('/').reverse().join('')
