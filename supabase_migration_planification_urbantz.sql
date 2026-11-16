@@ -19,8 +19,8 @@ select cron.schedule('urbantz-heures-plan', '10,40 8-11 * * 1-6', $$
     body := '{"workflow":"import","auto":true}'::jsonb);
 $$);
 
--- Colis à retourner : toutes les 30 min, 11h30-15h30 Paris, lundi-samedi
-select cron.schedule('urbantz-colis-retour', '0,30 9-14 * * 1-6', $$
+-- Colis à retourner : toutes les 30 min, 11h30-18h Paris, lundi-samedi
+select cron.schedule('urbantz-colis-retour', '0,30 9-17 * * 1-6', $$
   select net.http_post(
     url := 'https://<REF>.supabase.co/functions/v1/trigger-urbantz-returns',
     headers := '{"Content-Type":"application/json","x-cron-secret":"<CRON_SECRET>"}'::jsonb,
