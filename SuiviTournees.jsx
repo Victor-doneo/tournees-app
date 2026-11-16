@@ -67,11 +67,29 @@ export default function SuiviTournees({ readOnly = false }) {
   }, [tours, labelsByTour, isSaturday])
 
   // Anomalies : tournée rentrée mais des colis à retourner n'ont pas d'accusé de réception (rentrée avec moins de colis que prévu).
+  // Elles sont recherchées sur les 14 derniers jours (jours passés compris) tant que les colis ne sont pas réceptionnés.
   // Une tournée sans colis à retourner n'est jamais signalée.
-  const anomalies = useMemo(() => tours.filter(t => !!t.heure_retour).map(t => {
-    const ls = labelsByTour[refOf(t)] || []
-    return { t, ls, missing: ls.filter(l => !l.received_at) }
-  }).filter(a => a.ls.length > 0 && a.missing.length > 0), [tours, labelsByTour])
+  const [anomalies, setAnomalies] = useState([])
+  useEffect(() => { loadAnomalies() }, [day, labels])
+  async function loadAnomalies() {
+    const d0 = new Date(todayStr() + 'T12:00:00'); d0.setDate(d0.getDate() - 14)
+    const from = [d0.toISOString().slice(0, 10), day].sort()[0]
+    const to = [todayStr(), day].sort()[1]
+    const { data: ls } = await supabase.from('return_labels').select('task_date, tour_code, barcode, customer_name, received_at').gte('task_date', from).lte('task_date', to).limit(5000)
+    const withMissing = new Set((ls || []).filter(l => !l.received_at).map(l => `${l.task_date}|${l.tour_code}`))
+    if (!withMissing.size) return setAnomalies([])
+    const { data: ts } = await supabase.from('tours').select('id, name, heure_retour, tours_references(name), delivery_dates!inner(delivery_date)')
+      .gte('delivery_dates.delivery_date', from).lte('delivery_dates.delivery_date', to).not('heure_retour', 'is', null).limit(5000)
+    const out = []
+    for (const t of ts || []) {
+      const dt = t.delivery_dates?.delivery_date, code = t.tours_references?.name || t.name
+      if (!withMissing.has(`${dt}|${code}`)) continue
+      const mine = (ls || []).filter(l => l.task_date === dt && l.tour_code === code)
+      out.push({ t, dt, ls: mine, missing: mine.filter(l => !l.received_at) })
+    }
+    out.sort((a, b) => b.dt.localeCompare(a.dt) || refOf(a.t).localeCompare(refOf(b.t)))
+    setAnomalies(out)
+  }
 
   async function toggleRetard(tour) {
     setUpdating(tour.id)
@@ -205,10 +223,10 @@ export default function SuiviTournees({ readOnly = false }) {
 
             {anomalies.length > 0 && (
               <div style={{ background: '#fff5f5', borderRadius: 'var(--radius)', border: '1px solid var(--red)', padding: '14px 16px' }}>
-                <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={16} /> {anomalies.length} tournée(s) rentrée(s) avec des colis non réceptionnés</div>
+                <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={16} /> {anomalies.length} tournée(s) rentrée(s) avec des colis non réceptionnés (14 derniers jours)</div>
                 {anomalies.map(a => (
                   <div key={a.t.id} style={{ fontSize: 13, marginTop: 6 }}>
-                    <b>{refOf(a.t)}</b> — rentrée à {hhmm(a.t.heure_retour)} — {a.ls.length - a.missing.length}/{a.ls.length} colis réceptionnés
+                    <b>{refOf(a.t)}</b> — {new Date(a.dt + 'T12:00:00').toLocaleDateString('fr-FR')} — rentrée à {hhmm(a.t.heure_retour)} — {a.ls.length - a.missing.length}/{a.ls.length} colis réceptionnés
                     <div style={{ color: 'var(--gray-600)', fontSize: 12 }}>Manquants : {a.missing.map(l => `${l.barcode}${l.customer_name ? ' (' + l.customer_name + ')' : ''}`).join(', ')}</div>
                   </div>
                 ))}
