@@ -14,6 +14,11 @@ const day = DATE || `${p.year}-${p.month}-${p.day}`
 const mins = Number(p.hour) * 60 + Number(p.minute)
 if (!FORCE && !DATE && (mins < 11 * 60 + 25 || mins > 15 * 60 + 50)) { console.log(`Il est ${p.hour}h${p.minute} à Paris : extraction prévue de 11h30 à 15h30, rien à faire.`); process.exit(0) }
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+const JOB = 'urbantz_retours'
+// Suivi d'exécution : une ligne par automatisme (table job_runs), affichée dans « Suivi des tournées »
+const report = async (ok, msg) => { if (DRY_RUN) return; try { await sb.from('job_runs').upsert({ job: JOB, last_run: new Date().toISOString(), ok, message: String(msg || '').slice(0, 300) }) } catch {} }
+const done = async msg => { await report(true, msg); process.exit(0) }
+process.on('uncaughtException', e => { report(false, e?.message || e).finally(() => { console.error(e); process.exit(1) }) })
 
 // Codes de tournées de l'application (rapprochement facultatif avec le nom Urbantz)
 const { data: dRow } = await sb.from('delivery_dates').select('id').eq('delivery_date', day).maybeSingle()
@@ -122,3 +127,4 @@ if (rows.size) {
   }
 }
 console.log('OK')
+await report(true, `${rows.size} colis à retourner pour le ${day}`)

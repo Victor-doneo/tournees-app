@@ -20,6 +20,7 @@ export default function SuiviTournees({ readOnly = false }) {
   const [scan, setScan] = useState('')
   const [showReturned, setShowReturned] = useState(false)
   const [forcing, setForcing] = useState(false)
+  const [jobs, setJobs] = useState([])
 
   useEffect(() => { fetchAll() }, [day])
 
@@ -36,6 +37,8 @@ export default function SuiviTournees({ readOnly = false }) {
       tl = data || []
     }
     const { data: lab } = await supabase.from('return_labels').select('*').eq('task_date', day).order('customer_name')
+    const { data: jr } = await supabase.from('job_runs').select('*') // table absente (migration non lancée) : ignoré
+    setJobs(jr || [])
     setTours(tl); setLabels(lab || []); setSel(new Set()); setLoading(false)
   }
 
@@ -180,6 +183,17 @@ export default function SuiviTournees({ readOnly = false }) {
                   <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{l}</div>
                 </div>
               ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 12 }}>
+              <b style={{ color: 'var(--gray-500)' }}>Automatismes :</b>
+              {[['urbantz_import', 'Heures Urbantz'], ['urbantz_retours', 'Retours Urbantz'], ['reflex', 'Réceptions REFLEX']].map(([k, nom]) => {
+                const j = jobs.find(x => x.job === k)
+                const age = j ? (Date.now() - new Date(j.last_run).getTime()) / 36e5 : null
+                const color = !j ? 'var(--gray-400)' : !j.ok ? 'var(--red)' : age > 26 ? 'var(--orange)' : 'var(--green, #16a34a)'
+                const when = j ? new Date(j.last_run).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'jamais'
+                return <span key={k} className="badge badge-gray" title={j?.message || ''} style={{ color }}>● {nom} : {j && !j.ok ? 'ÉCHEC ' : ''}{when}</span>
+              })}
             </div>
 
             <div style={{ background: 'var(--white)', borderRadius: 'var(--radius)', border: '1px solid var(--gray-200)', padding: '14px 16px', boxShadow: 'var(--shadow-sm)' }}>

@@ -10,6 +10,11 @@ for (const [k, v] of Object.entries({ REFLEX_USER, REFLEX_PASSWORD, SUPABASE_URL
 const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).map(x => [x.type, x.value]))
 const day = DATE || `${p.year}-${p.month}-${p.day}`
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+const JOB = 'reflex'
+// Suivi d'exécution : une ligne par automatisme (table job_runs), affichée dans « Suivi des tournées »
+const report = async (ok, msg) => { if (DRY_RUN) return; try { await sb.from('job_runs').upsert({ job: JOB, last_run: new Date().toISOString(), ok, message: String(msg || '').slice(0, 300) }) } catch {} }
+const done = async msg => { await report(true, msg); process.exit(0) }
+process.on('uncaughtException', e => { report(false, e?.message || e).finally(() => { console.error(e); process.exit(1) }) })
 
 // Sources : 1) colis LCR de l'import PDF (table parcels, jours à venir inclus)  2) étiquettes de retour (return_labels)
 // Un même BP n'est cherché qu'une fois dans REFLEX ; le numéro est écrit dans toutes les lignes concernées.
@@ -40,7 +45,7 @@ const groups = new Map()
 for (const it of items) { if (!groups.has(it.bp)) groups.set(it.bp, []); groups.get(it.bp).push(it) }
 const todo = [...groups].slice(0, 40).map(([bp, its]) => ({ bp, items: its })) // 40 BP max par passage, la suite au passage suivant
 console.log(`${todo.length} BP « livraison contre reprise » sans n° de réception ${label}`)
-if (!todo.length) process.exit(0)
+if (!todo.length) await done('Aucun colis LCR en attente')
 
 // BROWSER_CHANNEL=chrome : utilise le Chrome installé sur le PC (évite de télécharger le navigateur de Playwright)
 const browser = await chromium.launch({ ...(BROWSER_CHANNEL ? { channel: BROWSER_CHANNEL } : {}), ...(process.env.HEADED ? { headless: false, slowMo: 150 } : {}) })
@@ -206,3 +211,4 @@ for (const o of out) {
   }
 }
 console.log(`OK : ${out.filter(o => o.reflex_reception).length}/${todo.length} n° de réception enregistrés`)
+await report(true, `${out.filter(o => o.reflex_reception).length}/${todo.length} n° de réception enregistrés`)

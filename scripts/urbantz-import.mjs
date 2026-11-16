@@ -15,6 +15,11 @@ const today = `${now.year}-${now.month}-${now.day}`
 if (!FORCE && !DATE && (Number(now.hour) < 10 || Number(now.hour) > 12)) { console.log(`Il est ${now.hour}h à Paris : import prévu entre 10h et 13h, rien à faire.`); process.exit(0) }
 
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+const JOB = 'urbantz_import'
+// Suivi d'exécution : une ligne par automatisme (table job_runs), affichée dans « Suivi des tournées »
+const report = async (ok, msg) => { if (DRY_RUN) return; try { await sb.from('job_runs').upsert({ job: JOB, last_run: new Date().toISOString(), ok, message: String(msg || '').slice(0, 300) }) } catch {} }
+const done = async msg => { await report(true, msg); process.exit(0) }
+process.on('uncaughtException', e => { report(false, e?.message || e).finally(() => { console.error(e); process.exit(1) }) })
 
 // 1) Prochain jour de livraison avec des tournées
 let day = DATE, dateRow = null
@@ -36,7 +41,7 @@ console.log(`Jour visé : ${day} (${tours.length} tournées dans l'application)`
 // Passages multiples (GitHub retarde ou saute parfois les déclenchements) : si tout est déjà importé, on s'arrête
 if (!FORCE && !DATE) {
   const { count: missing } = await sb.from('tours').select('id', { count: 'exact', head: true }).eq('delivery_date_id', dateRow.id).is('urbantz_first_arrival', null)
-  if (!missing) { console.log('Heures Urbantz déjà importées pour ce jour, rien à faire.'); process.exit(0) }
+  if (!missing) { console.log('Heures Urbantz déjà importées pour ce jour, rien à faire.'); await done(`Heures du ${day} déjà importées`) }
 }
 
 // 2) Urbantz : connexion puis lecture des tournées du jour (réponses « /mission? » du tableau de bord)
@@ -95,3 +100,4 @@ for (const { t, u } of upd) {
   if (error) throw error
 }
 console.log(`OK : ${upd.length} tournées mises à jour pour le ${day}`)
+await report(true, `${upd.length} tournées mises à jour pour le ${day}`)
