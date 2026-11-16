@@ -97,7 +97,7 @@ for (const t of tasks.values()) {
     if (it.status === 'NOT_DELIVERED') reason = 'Livraison impossible'
     else if (/PICKED_UP/.test(it.status || '') && !/^NOT_/.test(it.status)) reason = isDea(it) ? null : (it.status === 'PICKED_UP' ? 'Collecté' : 'Partiellement collecté')
     // Livraison contre reprise livrée : elle doit apparaître en « collecté » sous le numéro 7 + numéro du colis livré
-    if (!reason && it.status === 'DELIVERED' && lcr.has(bc)) { reason = 'Collecté (livraison contre reprise)'; outCode = '7' + bc; lcrCount++ }
+    if (!reason && it.status === 'DELIVERED' && lcr.has(bc) && !isDea(it)) { reason = 'Collecté (livraison contre reprise)'; outCode = '7' + bc; lcrCount++ }
     if (!reason) continue
     const loc = t.location || {}
     rows.set(`${day}|${outCode}`, {

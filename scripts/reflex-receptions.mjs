@@ -29,11 +29,12 @@ const items = []
   else for (const r of data || []) if (!recent(r)) items.push({ table: 'parcels', id: r.id, bp: String(r.barcode).trim() })
 }
 {
-  let q = sb.from('return_labels').select('id, barcode, task_date, reflex_checked_at').ilike('reason', '%contre reprise%').is('reflex_reception', null).gte('task_date', fromDay)
+  let q = sb.from('return_labels').select('id, barcode, task_date, reflex_checked_at, item_name, item_description').ilike('reason', '%contre reprise%').is('reflex_reception', null).gte('task_date', fromDay)
   if (toDay) q = q.lte('task_date', toDay)
   const { data, error } = await q.limit(500)
   if (error) throw error
-  for (const r of data || []) if (!recent(r)) items.push({ table: 'return_labels', id: r.id, bp: String(r.barcode).replace(/^7/, '').trim() })
+  const isDea = r => /(^|[^A-Z0-9])DEA([^A-Z0-9]|$)/i.test(`${r.item_name || ''} ${r.item_description || ''}`) // DEA : pas de n° de réception nécessaire
+  for (const r of data || []) if (!recent(r) && !isDea(r)) items.push({ table: 'return_labels', id: r.id, bp: String(r.barcode).replace(/^7/, '').trim() })
 }
 const groups = new Map()
 for (const it of items) { if (!groups.has(it.bp)) groups.set(it.bp, []); groups.get(it.bp).push(it) }
