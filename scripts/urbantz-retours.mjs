@@ -20,11 +20,14 @@ const { data: dRow } = await sb.from('delivery_dates').select('id').eq('delivery
 let codes = []
 // Livraisons contre reprise du jour (onglet Reprises, issues des PDF), hors DEA : un BL « X » livré doit ressortir en collecté sous « 7X »
 const lcr = new Set()
+const lcrReception = new Map() // n° de réception REFLEX déjà trouvé à l'import du PDF
 if (dRow) {
   const { data } = await sb.from('tours').select('name, tours_references(name)').eq('delivery_date_id', dRow.id); codes = (data || []).map(t => t.tours_references?.name || t.name)
   const { data: ps, error: pe } = await sb.from('parcels').select('barcode, dea, tours!inner(delivery_date_id)').eq('exclusion_reason', 'Livraison contre reprise').eq('tours.delivery_date_id', dRow.id)
   if (pe) throw pe
   for (const p of ps || []) if (!p.dea && p.barcode) lcr.add(String(p.barcode).trim())
+  const { data: rx, error: rxe } = await sb.from('parcels').select('barcode, reflex_reception, tours!inner(delivery_date_id)').eq('exclusion_reason', 'Livraison contre reprise').eq('tours.delivery_date_id', dRow.id).not('reflex_reception', 'is', null)
+  if (!rxe) for (const p of rx || []) lcrReception.set(String(p.barcode).trim(), p.reflex_reception) // colonne absente = migration non lancée : on ignore
 }
 console.log(`${lcr.size} livraisons contre reprise dans l'application pour le ${day}`)
 const matchCode = name => {
@@ -112,5 +115,10 @@ if (DRY_RUN) { console.log('DRY_RUN : rien écrit.'); process.exit(0) }
 if (rows.size) {
   const { error } = await sb.from('return_labels').upsert([...rows.values()], { onConflict: 'task_date,barcode' })
   if (error) throw error
+  // Reprend le n° de réception REFLEX trouvé à l'import du PDF (sans écraser une valeur déjà présente)
+  for (const [bc, rec] of lcrReception) {
+    if (!rows.has(`${day}|7${bc}`)) continue
+    await sb.from('return_labels').update({ reflex_reception: rec }).eq('task_date', day).eq('barcode', '7' + bc).is('reflex_reception', null)
+  }
 }
 console.log('OK')

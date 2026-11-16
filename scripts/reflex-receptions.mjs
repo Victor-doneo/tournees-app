@@ -11,16 +11,34 @@ const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europ
 const day = DATE || `${p.year}-${p.month}-${p.day}`
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-let q = sb.from('return_labels').select('id, barcode, task_date').ilike('reason', '%contre reprise%').is('reflex_reception', null)
-let label = day
-if (DAYS && !DATE) {
-  const from = new Date(`${day}T12:00:00Z`); from.setUTCDate(from.getUTCDate() - Number(DAYS))
-  const fromStr = from.toISOString().slice(0, 10)
-  q = q.gte('task_date', fromStr).lte('task_date', day); label = `du ${fromStr} au ${day}`
-} else q = q.eq('task_date', day)
-const { data: todo, error } = await q.order('task_date')
-if (error) throw error
-console.log(`${todo.length} colis « livraison contre reprise » sans n° de réception ${DAYS && !DATE ? '' : 'pour le '}${label}`)
+// Sources : 1) colis LCR de l'import PDF (table parcels, jours à venir inclus)  2) étiquettes de retour (return_labels)
+// Un même BP n'est cherché qu'une fois dans REFLEX ; le numéro est écrit dans toutes les lignes concernées.
+const addDays = (d, n) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10) }
+const manual = !!(DATE || DAYS)
+const fromDay = DATE ? DATE : DAYS ? addDays(day, -Number(DAYS)) : day
+const toDay = DATE ? DATE : DAYS ? day : null // sans option : du jour à tous les jours à venir
+const label = toDay ? (fromDay === toDay ? `pour le ${fromDay}` : `du ${fromDay} au ${toDay}`) : `à partir du ${fromDay}`
+const recent = r => !manual && r.reflex_checked_at && Date.now() - new Date(r.reflex_checked_at).getTime() < 60 * 60 * 1000 // pas de nouvel essai avant 1 h
+const items = []
+{
+  let q = sb.from('parcels').select('id, barcode, reflex_checked_at, tours!inner(delivery_dates!inner(delivery_date))')
+    .eq('exclusion_reason', 'Livraison contre reprise').eq('dea', false).is('reflex_reception', null).gte('tours.delivery_dates.delivery_date', fromDay)
+  if (toDay) q = q.lte('tours.delivery_dates.delivery_date', toDay)
+  const { data, error } = await q.limit(500)
+  if (error) console.log('Colis LCR du PDF ignorés (migration supabase_migration_reflex_lcr.sql lancée ?) :', error.message)
+  else for (const r of data || []) if (!recent(r)) items.push({ table: 'parcels', id: r.id, bp: String(r.barcode).trim() })
+}
+{
+  let q = sb.from('return_labels').select('id, barcode, task_date, reflex_checked_at').ilike('reason', '%contre reprise%').is('reflex_reception', null).gte('task_date', fromDay)
+  if (toDay) q = q.lte('task_date', toDay)
+  const { data, error } = await q.limit(500)
+  if (error) throw error
+  for (const r of data || []) if (!recent(r)) items.push({ table: 'return_labels', id: r.id, bp: String(r.barcode).replace(/^7/, '').trim() })
+}
+const groups = new Map()
+for (const it of items) { if (!groups.has(it.bp)) groups.set(it.bp, []); groups.get(it.bp).push(it) }
+const todo = [...groups].slice(0, 40).map(([bp, its]) => ({ bp, items: its })) // 40 BP max par passage, la suite au passage suivant
+console.log(`${todo.length} BP « livraison contre reprise » sans n° de réception ${label}`)
 if (!todo.length) process.exit(0)
 
 // BROWSER_CHANNEL=chrome : utilise le Chrome installé sur le PC (évite de télécharger le navigateur de Playwright)
@@ -146,7 +164,7 @@ const out = []
 try {
   await login()
   for (const row of todo) {
-    const bp = String(row.barcode).replace(/^7/, '')
+    const bp = row.bp
     try {
       await openSelection()
       await search(bp)
@@ -168,7 +186,7 @@ try {
       const pickRow = lcr[lcr.length - 1]
       const pick = pickRow ? [, , , , , recOf(pickRow)] : null
       console.log(`BP ${bp} : ${cells.length} réception(s), ${lcr.length} LCR -> ${pick ? pick[5] : 'aucune'}`)
-      out.push({ id: row.id, reflex_reception: pick ? String(pick[5]).trim() : null, reflex_note: pick ? (lcr.length > 1 ? `${lcr.length} lignes LCR : la plus récente retenue` : null) : (cells.length ? 'Aucune ligne LCR dans REFLEX' : 'Référence introuvable dans REFLEX') })
+      out.push({ items: row.items, reflex_reception: pick ? String(pick[5]).trim() : null, reflex_note: pick ? (lcr.length > 1 ? `${lcr.length} lignes LCR : la plus récente retenue` : null) : (cells.length ? 'Aucune ligne LCR dans REFLEX' : 'Référence introuvable dans REFLEX') })
       await closeResults()
     } catch (e) { console.log(`BP ${bp} : erreur ${e.message}`); await shot(`erreur-${bp}`); await closeResults() }
   }
@@ -181,7 +199,9 @@ if (DRY_RUN) { console.log('DRY_RUN : rien écrit', JSON.stringify(out)); proces
 for (const o of out) {
   const patch = { reflex_checked_at: new Date().toISOString(), reflex_note: o.reflex_note }
   if (o.reflex_reception) patch.reflex_reception = o.reflex_reception
-  const { error: ue } = await sb.from('return_labels').update(patch).eq('id', o.id)
-  if (ue) throw ue
+  for (const it of o.items) {
+    const { error: ue } = await sb.from(it.table).update(patch).eq('id', it.id)
+    if (ue) throw ue
+  }
 }
 console.log(`OK : ${out.filter(o => o.reflex_reception).length}/${todo.length} n° de réception enregistrés`)
