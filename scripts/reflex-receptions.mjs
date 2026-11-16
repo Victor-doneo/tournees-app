@@ -150,11 +150,16 @@ try {
         console.log('  aucune ligne ne correspond ; lignes visibles :', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.dgrid-row')].filter(r => r.offsetParent !== null).slice(0, 5).map(r => [...r.querySelectorAll('td.dgrid-cell')].map(c => c.innerText.trim().replace(/\s+/g, ' '))))))
       }
       console.log('  lignes trouvées :', JSON.stringify(cells))
-      // colonnes : 0 jour, 1 date, 2 ate, 3 code motif, 4 quai, 5 réception, 6 référence
-      const lcr = cells.filter(c => /^LCR$/i.test(c[3] || ''))
+      // Colonnes repérées par leur contenu (le nombre de colonnes avant « Jour » varie selon l'affichage) :
+      // code motif = cellule « LCR », réception = cellule juste avant la référence (= le BP), date = jj/mm/aaaa
+      const refIdx = c => c.findIndex(x => x === bp || x.includes(bp))
+      const dateOf = c => (c.find(x => /^\d{2}\/\d{2}\/\d{4}$/.test(x)) || '')
+      const recOf = c => { const i = refIdx(c); return i > 0 ? c[i - 1] : '' }
+      const lcr = cells.filter(c => c.some(x => /^LCR$/i.test(x)) && /^\d+$/.test(recOf(c)))
       const toKey = d => (d || '').split('/').reverse().join('')
-      lcr.sort((a, b) => toKey(a[1]).localeCompare(toKey(b[1])))
-      const pick = lcr[lcr.length - 1]
+      lcr.sort((a, b) => toKey(dateOf(a)).localeCompare(toKey(dateOf(b))))
+      const pickRow = lcr[lcr.length - 1]
+      const pick = pickRow ? [, , , , , recOf(pickRow)] : null
       console.log(`BP ${bp} : ${cells.length} réception(s), ${lcr.length} LCR -> ${pick ? pick[5] : 'aucune'}`)
       out.push({ id: row.id, reflex_reception: pick ? String(pick[5]).trim() : null, reflex_note: pick ? (lcr.length > 1 ? `${lcr.length} lignes LCR : la plus récente retenue` : null) : (cells.length ? 'Aucune ligne LCR dans REFLEX' : 'Référence introuvable dans REFLEX') })
       await closeResults()
