@@ -150,6 +150,14 @@ export default function Tours() {
         })
         if (emailRes.ok) toast.success('Rapport envoyé par email !')
         else toast.error('Contrôle validé mais erreur envoi email.')
+        // Anomalies de retour (tournée rentrée avec des colis non réceptionnés) : envoyées avec le rapport, mêmes destinataires
+        const anoRes = await fetch(`${supabaseUrl}/functions/v1/send-return-anomalies`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date }),
+        }).catch(() => null)
+        const ano = anoRes?.ok ? await anoRes.json().catch(() => null) : null
+        if (ano?.sent) toast(`${ano.anomalies} anomalie(s) de retour envoyée(s) par email`)
       } catch (emailErr) {
         console.error('Erreur envoi email:', emailErr)
       }

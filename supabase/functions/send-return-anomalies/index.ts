@@ -2,9 +2,10 @@
 //   = tournées marquées « rentrées » alors que des colis à retourner n'ont pas d'accusé de réception (tournée rentrée avec moins de colis que prévu).
 //   Les tournées sans colis à retourner ne sont jamais signalées.
 // Corps (facultatif) : { date?: 'AAAA-MM-JJ' }  (défaut : aujourd'hui, heure de Paris). Rien n'est envoyé s'il n'y a aucune anomalie.
-// Déployer avec « Verify JWT » désactivé (authentification dans la fonction : administrateur OU en-tête x-cron-secret = secret CRON_SECRET)
+// Appelée automatiquement par l'application juste après l'envoi du rapport (validation du contrôle, Tours.jsx) avec la session de l'administrateur.
+// Authentification dans la fonction : administrateur OU en-tête x-cron-secret = secret CRON_SECRET (facultatif)
 // Déploiement : supabase functions deploy send-return-anomalies
-// Secrets utilisés : RESEND_API_KEY, FROM_EMAIL (déjà configurés pour les autres mails) et CRON_SECRET
+// Secrets utilisés : RESEND_API_KEY, FROM_EMAIL (déjà configurés pour les autres mails)
 // Destinataires : table email_recipients (ceux du rapport journalier), colonne active = true
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
