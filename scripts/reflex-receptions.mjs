@@ -53,10 +53,10 @@ async function openSelection() {
       const cands = await page.evaluate(() => [...document.querySelectorAll('button, [role=button], .dijitButton, img, span, div')].filter(e => { const r = e.getBoundingClientRect(); return e.offsetParent !== null && r.y < 40 && r.x < 70 && r.width > 8 && r.width < 70 && r.height > 8 && r.height < 40 }).map(e => { const r = e.getBoundingClientRect(); return { tag: e.tagName, cls: String(e.className).slice(0, 60), x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } }))
       if (attempt === 1) console.log('  éléments en haut à gauche :', JSON.stringify(cands.slice(0, 8)))
       const pick = cands.find(c => c.tag === 'BUTTON') || cands.find(c => /button/i.test(c.cls)) || cands[0]
-      if (pick) await page.mouse.click(pick.x, pick.y); else await page.mouse.click(27, 18)
+      if (pick) await page.mouse.dblclick(pick.x, pick.y); else await page.mouse.dblclick(27, 18) // REFLEX : double clic nécessaire partout
       await sleep(2000)
       const acc = page.locator('.dijitAccordionText', { hasText: /^Réception$/ }).filter({ visible: true }).first()
-      if (await acc.count()) { await acc.click().catch(() => {}); await sleep(1200) }
+      if (await acc.count()) { await acc.dblclick().catch(() => {}); await sleep(1500) }
     }
     const items = page.locator('.dijitTreeLabel', { hasText: /^Réceptions$/ }).filter({ visible: true })
     const n = await items.count()
@@ -67,8 +67,7 @@ async function openSelection() {
       console.log(`  élément « Réceptions » #${k} à (${Math.round(b.x)}, ${Math.round(b.y)}), tentative ${attempt}`)
       await it.scrollIntoViewIfNeeded().catch(() => {})
       const mode = attempt % 3
-      if (mode === 1) await it.click().catch(() => {})
-      else if (mode === 2) await it.dblclick().catch(() => {})
+      if (mode !== 0) await it.dblclick().catch(() => {}) // double clic d'abord (REFLEX n'ouvre pas au simple clic)
       else { await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await page.mouse.up(); await sleep(150); await page.mouse.down(); await page.mouse.up() }
       for (let i = 0; i < 10 && !(await label.count()); i++) await sleep(1000)
       if (await label.count()) { await sleep(500); return }
