@@ -89,3 +89,13 @@ export function useDemandeNotifications({ toastOnNew = false } = {}) {
 
   return state
 }
+
+// Historique : les 60 dernières notifications (lues ou non), avec la demande concernée
+export async function fetchRecentNotifications(limit = 60) {
+  const { data, error } = await supabase
+    .from('demande_notifications')
+    .select('id, demande_id, kind, message, created_at, read_at, actor:actor_id(full_name, email), demande:demande_id(id, type, bp, commentaire, status)')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  return error ? [] : (data || [])
+}

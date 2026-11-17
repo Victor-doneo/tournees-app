@@ -3,11 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from './supabase'
 import { ageLabel, ageInWorkingDays, MAX_FILES, acceptFiles, makePending, uploadAttachment, PendingFile, StoredFile } from './attachments'
 import { useAuth } from './AuthContext'
-import { useDemandeNotifications, markDemandeRead, markAllDemandesRead } from './demandeNotifications'
+import { useDemandeNotifications, markDemandeRead, markAllDemandesRead, fetchRecentNotifications } from './demandeNotifications'
 import toast from 'react-hot-toast'
 import {
   Plus, X, Package, ShieldAlert, PackagePlus, Search, MessageSquare,
-  CheckCircle2, Send, ClipboardList, Paperclip,
+  CheckCircle2, Send, ClipboardList, Paperclip, Bell,
 } from 'lucide-react'
 
 const PHOTO_BUCKET = 'demandes-photos'
@@ -47,6 +47,8 @@ export default function Demandes() {
   const [bpSearch, setBpSearch] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selected, setSelected] = useState(null)
+  const [showNotifs, setShowNotifs] = useState(false)
+  const [history, setHistory] = useState([])
 
   const filteredDemandes = bpSearch.trim()
     ? demandes.filter(d => (d.bp || []).some(bp => bp.toLowerCase().includes(bpSearch.trim().toLowerCase())))
@@ -59,11 +61,28 @@ export default function Demandes() {
   // Ouvrir automatiquement une demande si ?open=<id> est présent (venant de la recherche colis)
   useEffect(() => {
     const openId = searchParams.get('open')
-    if (openId && demandes.length > 0) {
-      const d = demandes.find(d => d.id === openId)
-      if (d) setSelected(d)
-    }
+    if (!openId || selected?.id === openId) return
+    const d = demandes.find(d => d.id === openId)
+    if (d) { setSelected(d); return }
+    // Demande absente du filtre courant (ex. résolue) : on va la chercher directement
+    supabase
+      .from('demandes')
+      .select('*, created_by_user:created_by(full_name, email), resolved_by_user:resolved_by(full_name, email)')
+      .eq('id', openId).maybeSingle()
+      .then(({ data }) => { if (data) setSelected(data) })
   }, [searchParams, demandes])
+
+  async function toggleNotifs() {
+    const next = !showNotifs
+    setShowNotifs(next)
+    if (next) setHistory(await fetchRecentNotifications())
+  }
+
+  function openFromNotif(n) {
+    setShowNotifs(false)
+    setSelected(null)
+    setSearchParams(prev => { const p = new URLSearchParams(prev); p.set('open', n.demande_id); return p })
+  }
 
   async function fetchDemandes(silent = false) {
     if (!silent) setLoading(true)
@@ -111,11 +130,37 @@ export default function Demandes() {
             <p className="page-subtitle">Sécurisation, ajouts non planifiés, recherches de colis et autres demandes</p>
           </div>
           {canCreate && (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {notifs.total > 0 && (
-                <button className="btn btn-secondary" onClick={markAllDemandesRead}>
-                  <CheckCircle2 size={15} /> Tout marquer comme lu ({notifs.total})
-                </button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', position: 'relative' }}>
+              <button className="btn btn-secondary" onClick={toggleNotifs}>
+                <Bell size={15} /> Notifications{notifs.total > 0 ? ` (${notifs.total})` : ''}
+              </button>
+              {showNotifs && (
+                <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, width: 400, maxWidth: '90vw', maxHeight: 460, overflowY: 'auto', background: '#fff', border: '1px solid var(--gray-200)', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.15)', zIndex: 50 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid var(--gray-100)' }}>
+                    <strong style={{ fontSize: 13 }}>Notifications récentes</strong>
+                    {notifs.total > 0 && (
+                      <button className="btn btn-sm btn-secondary" onClick={async () => { await markAllDemandesRead(); setHistory(await fetchRecentNotifications()) }}>
+                        Tout marquer comme lu
+                      </button>
+                    )}
+                  </div>
+                  {history.length === 0 ? (
+                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>Aucune notification</div>
+                  ) : history.map(n => (
+                    <div key={n.id} onClick={() => openFromNotif(n)} style={{ padding: '10px 14px', borderBottom: '1px solid var(--gray-100)', cursor: 'pointer', background: n.read_at ? undefined : 'rgba(239,68,68,0.06)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: 'var(--gray-500)' }}>
+                        <span>{n.actor?.full_name || n.actor?.email || '—'} · {n.kind === 'statut' ? 'statut modifié' : 'a répondu'}</span>
+                        <span style={{ whiteSpace: 'nowrap' }}>{new Date(n.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: n.read_at ? 400 : 600, marginTop: 2 }}>
+                        {n.demande ? `${(TYPES[n.demande.type] || TYPES.autre).label}${(n.demande.bp || []).length ? ' · ' + n.demande.bp.slice(0, 2).join(', ') + (n.demande.bp.length > 2 ? '…' : '') : ''}` : 'Demande supprimée'}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--gray-600)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {n.kind === 'statut' ? `Nouveau statut : ${(STATUS_META[n.message] || {}).label || n.message}` : n.message}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
               <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
                 <Plus size={15} /> Nouvelle demande
