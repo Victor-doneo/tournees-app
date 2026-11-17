@@ -16,11 +16,12 @@ const TYPES = {
   securisation: { label: 'Sécurisation', badge: 'badge-red', icon: ShieldAlert },
   ajout_non_planifie: { label: 'Ajout non planifié dans une tournée', badge: 'badge-orange', icon: PackagePlus },
   ajout_non_planifie_retour: { label: 'Ajout non planifié en retour', badge: 'badge-purple', icon: PackagePlus },
+  reception_reflex: { label: 'Réception REFLEX à réaliser', badge: 'badge-orange', icon: PackagePlus },
   recherche_colis: { label: 'Recherche de colis', badge: 'badge-blue', icon: Search },
   autre: { label: 'Autres demandes', badge: 'badge-gray', icon: MessageSquare },
 }
 
-const BP_REQUIRED_TYPES = ['securisation', 'ajout_non_planifie', 'ajout_non_planifie_retour', 'recherche_colis']
+const BP_REQUIRED_TYPES = ['securisation', 'ajout_non_planifie', 'ajout_non_planifie_retour', 'recherche_colis', 'reception_reflex']
 
 const STATUS_META = {
   ouverte: { label: 'Ouverte', badge: 'badge-orange' },

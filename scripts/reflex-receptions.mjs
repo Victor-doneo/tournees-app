@@ -41,11 +41,39 @@ const items = []
   const isDea = r => /(^|[^A-Z0-9])DEA([^A-Z0-9]|$)/i.test(`${r.item_name || ''} ${r.item_description || ''}`) // DEA : pas de n° de réception nécessaire
   for (const r of data || []) if (!recent(r) && !isDea(r)) items.push({ table: 'return_labels', id: r.id, bp: String(r.barcode).replace(/^7/, '').trim() })
 }
+// ── Phase 2 : vérifier dans REFLEX que les colis dont la réception est accusée dans Superflash y sont bien réceptionnés ──
+// Ligne la plus récente du BP dans REFLEX : colonne « Manquants » > 0 -> non réceptionné ; sinon -> réceptionné.
+// À 18h (heure de Paris) ou après : toute réception accusée ici mais non réceptionnée dans REFLEX crée une demande « Réception REFLEX à réaliser ».
+const VERIF_FROM = '2026-11-16'
+const pHour = iso => Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', hourCycle: 'h23' }).format(new Date(iso)))
+const pDay = iso => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date(iso))
+const nowIso = new Date().toISOString()
+const after18 = pHour(nowIso) >= 18
+const verifGroups = new Map()
+{
+  const { data, error } = await sb.from('return_labels')
+    .select('id, barcode, reason, tour_code, task_date, reflex_recv_status, reflex_recv_checked_at, reflex_demande_id')
+    .not('received_at', 'is', null).gte('task_date', VERIF_FROM).or('reflex_recv_status.is.null,reflex_recv_status.neq.receptionne').limit(500)
+  if (error) console.log('Vérification des réceptions ignorée (migration supabase_migration_reflex_verification.sql lancée ?) :', error.message)
+  else for (const r of data || []) {
+    const c = r.reflex_recv_checked_at
+    const age = c ? Date.now() - new Date(c).getTime() : Infinity
+    const checkedBefore18Today = c && (pDay(c) < pDay(nowIso) || (pDay(c) === pDay(nowIso) && pHour(c) < 18))
+    const need = manual || age > 30 * 60 * 1000 || (after18 && !r.reflex_demande_id && (!c || checkedBefore18Today))
+    if (!need) continue
+    const bp = /contre reprise/i.test(r.reason || '') ? String(r.barcode).replace(/^7/, '').trim() : String(r.barcode).trim()
+    if (!verifGroups.has(bp)) verifGroups.set(bp, [])
+    verifGroups.get(bp).push(r)
+  }
+}
+const verif = [...verifGroups].slice(0, 40).map(([bp, labels]) => ({ bp, labels }))
+console.log(`${verif.length} BP à vérifier dans REFLEX (réception accusée dans Superflash)`)
+
 const groups = new Map()
 for (const it of items) { if (!groups.has(it.bp)) groups.set(it.bp, []); groups.get(it.bp).push(it) }
 const todo = [...groups].slice(0, 40).map(([bp, its]) => ({ bp, items: its })) // 40 BP max par passage, la suite au passage suivant
 console.log(`${todo.length} BP « livraison contre reprise » sans n° de réception ${label}`)
-if (!todo.length) await done('Aucun colis LCR en attente')
+if (!todo.length && !verif.length) await done('Rien à faire (aucun colis LCR en attente, aucune réception à vérifier)')
 
 // BROWSER_CHANNEL=chrome : utilise le Chrome installé sur le PC (évite de télécharger le navigateur de Playwright)
 const browser = await chromium.launch({ ...(BROWSER_CHANNEL ? { channel: BROWSER_CHANNEL } : {}), ...(process.env.HEADED ? { headless: false, slowMo: 150 } : {}) })
@@ -166,7 +194,7 @@ async function closeResults() {
   if (await q.count()) { await q.click().catch(() => {}); await sleep(800) }
 }
 
-const out = []
+const out = [], vOut = []
 try {
   await login()
   for (const row of todo) {
@@ -196,12 +224,36 @@ try {
       await closeResults()
     } catch (e) { console.log(`BP ${bp} : erreur ${e.message}`); await shot(`erreur-${bp}`); await closeResults() }
   }
+  // Phase 2 : vérification des réceptions accusées
+  for (const v of verif) {
+    const bp = v.bp
+    try {
+      await openSelection()
+      await search(bp)
+      let cells = await readRows(bp)
+      for (let i = 0; i < 8 && !cells.length; i++) { await sleep(1500); cells = await readRows(bp) }
+      const toKey = d => (d || '').split('/').reverse().join('')
+      const dateOf = c => (c.find(x => /^\d{2}\/\d{2}\/\d{4}$/.test(x)) || '')
+      const rows = cells.filter(c => dateOf(c)).sort((a, b) => toKey(dateOf(a)).localeCompare(toKey(dateOf(b))))
+      const last = rows[rows.length - 1]
+      let status = 'introuvable', line = null
+      if (last) {
+        const r = last.findIndex(x => x === bp || x.includes(bp))
+        const manq = parseInt(last[r + 3]) || 0
+        status = manq > 0 ? 'manquant' : 'receptionne'
+        line = dateOf(last)
+      }
+      console.log(`Vérif BP ${bp} : ${rows.length} ligne(s), plus récente ${line || '—'} -> ${status}`)
+      vOut.push({ ...v, status, line })
+      await closeResults()
+    } catch (e) { console.log(`Vérif BP ${bp} : erreur ${e.message}`); await shot(`erreur-verif-${bp}`); await closeResults() }
+  }
 } catch (e) {
   await shot('erreur'); await browser.close(); throw e
 }
 await browser.close()
 
-if (DRY_RUN) { console.log('DRY_RUN : rien écrit', JSON.stringify(out)); process.exit(0) }
+if (DRY_RUN) { console.log('DRY_RUN : rien écrit', JSON.stringify(out), JSON.stringify(vOut.map(v => ({ bp: v.bp, status: v.status })))); process.exit(0) }
 for (const o of out) {
   const patch = { reflex_checked_at: new Date().toISOString(), reflex_note: o.reflex_note }
   if (o.reflex_reception) patch.reflex_reception = o.reflex_reception
@@ -210,5 +262,31 @@ for (const o of out) {
     if (ue) throw ue
   }
 }
-console.log(`OK : ${out.filter(o => o.reflex_reception).length}/${todo.length} n° de réception enregistrés`)
-await report(true, `${out.filter(o => o.reflex_reception).length}/${todo.length} n° de réception enregistrés`)
+// Écriture des vérifications + demandes « Réception REFLEX à réaliser » (à partir de 18h)
+let demandes = 0
+if (vOut.length) {
+  let creator = process.env.DEMANDE_USER_ID || null
+  if (!creator && after18) creator = (await sb.from('users').select('id').eq('role', 'admin').limit(1)).data?.[0]?.id || null
+  for (const v of vOut) {
+    let demandeId = null
+    const needDemande = after18 && v.status !== 'receptionne' && v.labels.some(l => !l.reflex_demande_id) && creator
+    if (needDemande) {
+      const tours = [...new Set(v.labels.map(l => `${l.tour_code || '—'} du ${l.task_date.split('-').reverse().join('.')}`))].join(', ')
+      const { data: dem, error: de } = await sb.from('demandes').insert({
+        type: 'reception_reflex', bp: [v.bp], photos: [], status: 'ouverte', created_by: creator,
+        commentaire: `Réception accusée dans Superflash (${tours}) mais colis ${v.status === 'manquant' ? 'non réceptionné' : 'introuvable'} dans REFLEX à 18h : réception REFLEX à réaliser.`,
+      }).select('id').single()
+      if (de) console.log(`Demande non créée pour ${v.bp} : ${de.message}`); else { demandeId = dem.id; demandes++ }
+    }
+    for (const l of v.labels) {
+      const { error: ve } = await sb.from('return_labels').update({
+        reflex_recv_status: v.status, reflex_recv_checked_at: new Date().toISOString(), reflex_recv_line: v.line,
+        ...(demandeId && !l.reflex_demande_id ? { reflex_demande_id: demandeId } : {}),
+      }).eq('id', l.id)
+      if (ve) throw ve
+    }
+  }
+}
+const okMsg = `${out.filter(o => o.reflex_reception).length}/${todo.length} n° de réception ; ${vOut.filter(v => v.status === 'receptionne').length}/${verif.length} réceptions vérifiées${demandes ? `, ${demandes} demande(s) créée(s)` : ''}`
+console.log('OK : ' + okMsg)
+await report(true, okMsg)
