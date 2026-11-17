@@ -149,7 +149,7 @@ export default function Demandes() {
                   ) : history.map(n => (
                     <div key={n.id} onClick={() => openFromNotif(n)} style={{ padding: '10px 14px', borderBottom: '1px solid var(--gray-100)', cursor: 'pointer', background: n.read_at ? undefined : 'rgba(239,68,68,0.06)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: 'var(--gray-500)' }}>
-                        <span>{n.actor?.full_name || n.actor?.email || '—'} · {n.kind === 'statut' ? 'statut modifié' : 'a répondu'}</span>
+                        <span>{n.actor?.full_name || n.actor?.email || '—'} · {n.kind === 'statut' ? 'statut modifié' : n.kind === 'nouvelle' ? 'nouvelle demande' : 'a répondu'}</span>
                         <span style={{ whiteSpace: 'nowrap' }}>{new Date(n.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
                       <div style={{ fontSize: 13, fontWeight: n.read_at ? 400 : 600, marginTop: 2 }}>

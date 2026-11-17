@@ -65,9 +65,9 @@ export function useDemandeNotifications({ toastOnNew = false } = {}) {
           if (fresh.length === 1) {
             const r = fresh[0]
             const who = r.actor?.full_name || r.actor?.email || 'Quelqu\'un'
-            toast(r.kind === 'statut' ? `${who} a mis à jour une demande` : `${who} a répondu à une demande`, { icon: '💬' })
+            toast(r.kind === 'statut' ? `${who} a mis à jour une demande` : r.kind === 'nouvelle' ? `${who} a créé une demande` : `${who} a répondu à une demande`, { icon: '💬' })
           } else if (fresh.length > 1) {
-            toast(`${fresh.length} nouvelles réponses sur vos demandes`, { icon: '💬' })
+            toast(`${fresh.length} nouvelles notifications sur les demandes`, { icon: '💬' })
           }
         }
         seen.current = ids

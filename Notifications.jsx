@@ -77,7 +77,7 @@ export default function Notifications() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>
                     <strong style={{ color: 'var(--gray-800)' }}>{n.actor?.full_name || n.actor?.email || '—'}</strong>
-                    {n.kind === 'statut' ? ' a mis à jour la demande' : ' a répondu à la demande'}
+                    {n.kind === 'statut' ? ' a mis à jour la demande' : n.kind === 'nouvelle' ? ' a créé une demande' : ' a répondu à la demande'}
                     {d && <> · <span className={`badge ${t.badge}`}>{t.label}</span>{(d.bp || []).length > 0 && <> · <code>{d.bp.slice(0, 2).join(', ')}{d.bp.length > 2 ? '…' : ''}</code></>}</>}
                     {!d && ' (supprimée)'}
                   </div>

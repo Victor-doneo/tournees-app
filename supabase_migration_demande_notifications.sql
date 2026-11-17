@@ -91,4 +91,22 @@ create trigger trg_notify_demande_statut
   after update of status on public.demandes
   for each row execute function public.notify_demande_statut();
 
+-- ── Nouvelle demande : prévient tous les admins (sauf le créateur) ──
+create or replace function public.notify_demande_creation()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.demande_notifications (user_id, demande_id, kind, actor_id, message)
+  select u.id, new.id, 'nouvelle', new.created_by,
+         left(coalesce(nullif(trim(new.commentaire), ''), 'Nouvelle demande'), 200)
+  from public.users u
+  where u.role = 'admin'
+    and u.id is distinct from new.created_by;
+  return new;
+end $$;
+
+drop trigger if exists trg_notify_demande_creation on public.demandes;
+create trigger trg_notify_demande_creation
+  after insert on public.demandes
+  for each row execute function public.notify_demande_creation();
+
 -- ═══════════════════════════════════════════════════════════════
