@@ -41,6 +41,37 @@ const items = []
   const isDea = r => /(^|[^A-Z0-9])DEA([^A-Z0-9]|$)/i.test(`${r.item_name || ''} ${r.item_description || ''}`) // DEA : pas de n° de réception nécessaire
   for (const r of data || []) if (!recent(r) && !isDea(r)) items.push({ table: 'return_labels', id: r.id, bp: String(r.barcode).replace(/^7/, '').trim() })
 }
+// ── Retours attendus depuis plus de 3 jours : demande « Autres » sur le BP : « Vérifier que le colis n'est pas revenu » ──
+// (indépendant de REFLEX : s'exécute à chaque passage, une seule demande par colis grâce à overdue_demande_id)
+{
+  const OVERDUE_DAYS = 3, OVERDUE_FROM = '2026-11-16'
+  const limit = addDays(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date()), -OVERDUE_DAYS)
+  const { data: late, error: le } = await sb.from('return_labels').select('id, barcode, reason, tour_code, task_date')
+    .is('received_at', null).is('overdue_demande_id', null).gte('task_date', OVERDUE_FROM).lte('task_date', limit).limit(500)
+  if (le) console.log('Demandes de retard ignorées (migration supabase_migration_reflex_verification.sql lancée ?) :', le.message)
+  else if ((late || []).length && !DRY_RUN) {
+    const creator = process.env.DEMANDE_USER_ID || (await sb.from('users').select('id').eq('role', 'admin').limit(1)).data?.[0]?.id
+    const byBp = new Map()
+    for (const l of late) {
+      const bp = /contre reprise/i.test(l.reason || '') ? String(l.barcode).replace(/^7/, '').trim() : String(l.barcode).trim()
+      if (!byBp.has(bp)) byBp.set(bp, [])
+      byBp.get(bp).push(l)
+    }
+    let created = 0
+    for (const [bp, ls] of byBp) {
+      const tours = [...new Set(ls.map(l => `${l.tour_code || '—'} du ${l.task_date.split('-').reverse().join('.')}`))].join(', ')
+      const { data: dem, error: de } = await sb.from('demandes').insert({
+        type: 'autre', bp: [bp], photos: [], status: 'ouverte', created_by: creator,
+        commentaire: `Vérifier que le colis n'est pas revenu. Retour attendu (${tours}) non réceptionné depuis plus de ${OVERDUE_DAYS} jours.`,
+      }).select('id').single()
+      if (de) { console.log(`Demande de retard non créée pour ${bp} : ${de.message}`); continue }
+      created++
+      await sb.from('return_labels').update({ overdue_demande_id: dem.id }).in('id', ls.map(l => l.id))
+    }
+    console.log(`${created} demande(s) « Vérifier que le colis n'est pas revenu » créée(s)`)
+  }
+}
+
 // ── Phase 2 : vérifier dans REFLEX que les colis dont la réception est accusée dans Superflash y sont bien réceptionnés ──
 // Ligne la plus récente du BP dans REFLEX : colonne « Manquants » > 0 -> non réceptionné ; sinon -> réceptionné.
 // À 18h (heure de Paris) ou après : toute réception accusée ici mais non réceptionnée dans REFLEX crée une demande « Réception REFLEX à réaliser ».

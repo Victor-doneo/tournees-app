@@ -4,7 +4,8 @@ alter table public.return_labels
   add column if not exists reflex_recv_status text,            -- receptionne | manquant | introuvable
   add column if not exists reflex_recv_checked_at timestamptz,
   add column if not exists reflex_recv_line text,              -- date de la ligne REFLEX retenue (la plus récente)
-  add column if not exists reflex_demande_id uuid;             -- demande créée (une seule par colis)
+  add column if not exists reflex_demande_id uuid,             -- demande « Réception REFLEX » créée (une seule par colis)
+  add column if not exists overdue_demande_id uuid;            -- demande « Vérifier que le colis n'est pas revenu » (retour attendu > 3 jours)
 
 -- Nouveau type de demande
 do $$
