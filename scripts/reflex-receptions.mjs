@@ -111,7 +111,17 @@ const browser = await chromium.launch({ ...(BROWSER_CHANNEL ? { channel: BROWSER
 const context = await browser.newContext({ locale: 'fr-FR', viewport: { width: 1600, height: 900 } })
 let page = await context.newPage()
 // Si REFLEX ouvre l'écran dans une nouvelle fenêtre, on bascule dessus
-context.on('page', async p => { await p.waitForLoadState('domcontentloaded').catch(() => {}); console.log('  nouvelle fenêtre ouverte :', p.url()); page = p })
+context.on('page', async p => {
+  await p.waitForLoadState('domcontentloaded').catch(() => {})
+  console.log('  nouvelle fenêtre ouverte :', p.url())
+  page = p
+  // Si cette fenêtre se ferme (REFLEX en ouvre parfois une éphémère), on revient sur la dernière fenêtre encore ouverte
+  p.on('close', () => {
+    if (page !== p) return
+    const open = context.pages().filter(x => !x.isClosed())
+    if (open.length) { page = open[open.length - 1]; console.log('  fenêtre fermée : retour sur', page.url()) }
+  })
+})
 const shot = async n => page.screenshot({ path: `reflex-${n}.png`, fullPage: true }).catch(() => {})
 const sleep = ms => page.waitForTimeout(ms)
 
@@ -221,8 +231,15 @@ async function readRows(bp) {
 }
 
 async function closeResults() {
-  const q = page.locator('button', { hasText: /^Quitter$/ }).filter({ visible: true }).last()
-  if (await q.count()) { await q.click().catch(() => {}); await sleep(800) }
+  try {
+    const q = page.locator('button', { hasText: /^Quitter$/ }).filter({ visible: true }).last()
+    if (await q.count()) { await q.click().catch(() => {}); await sleep(800) }
+  } catch (e) {
+    // Page fermée : on reprend sur une fenêtre ouverte, sinon on arrête proprement (navigateur fermé)
+    const open = context.pages().filter(x => !x.isClosed())
+    if (!open.length) throw new Error('Navigateur fermé pendant l\'exécution (ne pas fermer la fenêtre REFLEX)')
+    page = open[open.length - 1]
+  }
 }
 
 const out = [], vOut = []
