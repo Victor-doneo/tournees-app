@@ -164,7 +164,13 @@ export default function SearchParcel() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
                   <div style={{ padding: '12px 16px', borderRight: '1px solid var(--gray-100)' }}>
                     <div style={{ fontSize: 11, color: 'var(--gray-400)', textTransform: 'uppercase', marginBottom: 6 }}>Ce colis</div>
-                    {l.received_at ? <span className="badge badge-green">Réceptionné à {hhmm(l.received_at)}</span> : <span className="badge badge-gray">Non réceptionné</span>}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {l.received_at ? <span className="badge badge-green">Réceptionné à {hhmm(l.received_at)}</span> : <span className="badge badge-gray">Non réceptionné</span>}
+                      {l.reflex_recv_status === 'receptionne' ? <span className="badge badge-green" title={l.reflex_recv_line ? `Ligne REFLEX du ${l.reflex_recv_line}` : ''}>Réceptionné dans REFLEX</span>
+                        : l.reflex_recv_status === 'manquant' ? <span className="badge badge-orange">Non réceptionné dans REFLEX</span>
+                        : l.reflex_recv_status === 'introuvable' ? <span className="badge badge-red">Introuvable dans REFLEX</span>
+                        : <span className="badge badge-gray">REFLEX : non vérifié</span>}
+                    </div>
                     {canAct && <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => printLabels([l])}><Printer size={14} /> Imprimer l'étiquette</button>
                       {!l.received_at && <button className="btn btn-primary btn-sm" onClick={() => receiveLabel(l)}><CheckCircle size={14} /> Accuser réception du colis</button>}
