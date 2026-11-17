@@ -84,20 +84,17 @@ const verifGroups = new Map()
 {
   const { data, error } = await sb.from('return_labels')
     .select('id, barcode, reason, tour_code, task_date, reflex_recv_status, reflex_recv_checked_at, reflex_demande_id')
-    .not('received_at', 'is', null).gte('task_date', VERIF_FROM).or('reflex_recv_status.is.null,reflex_recv_status.neq.receptionne').limit(500)
+    .not('received_at', 'is', null).gte('task_date', VERIF_FROM).or('reflex_recv_status.is.null,reflex_recv_status.neq.receptionne').order('reflex_recv_checked_at', { ascending: true, nullsFirst: true }).limit(500)
   if (error) console.log('Vérification des réceptions ignorée (migration supabase_migration_reflex_verification.sql lancée ?) :', error.message)
   else for (const r of data || []) {
-    const c = r.reflex_recv_checked_at
-    const age = c ? Date.now() - new Date(c).getTime() : Infinity
-    const checkedBefore18Today = c && (pDay(c) < pDay(nowIso) || (pDay(c) === pDay(nowIso) && pHour(c) < 18))
-    const need = manual || age > 30 * 60 * 1000 || (after18 && !r.reflex_demande_id && (!c || checkedBefore18Today))
-    if (!need) continue
+    // Tout BP pas encore « réceptionné » dans REFLEX est revérifié à chaque passage (il a pu être réceptionné depuis) ;
+    // les moins récemment vérifiés passent en premier
     const bp = /contre reprise/i.test(r.reason || '') ? String(r.barcode).replace(/^7/, '').trim() : String(r.barcode).trim()
     if (!verifGroups.has(bp)) verifGroups.set(bp, [])
     verifGroups.get(bp).push(r)
   }
 }
-const verif = [...verifGroups].slice(0, 40).map(([bp, labels]) => ({ bp, labels }))
+const verif = [...verifGroups].slice(0, 60).map(([bp, labels]) => ({ bp, labels }))
 console.log(`${verif.length} BP à vérifier dans REFLEX (réception accusée dans Superflash)`)
 
 const groups = new Map()
