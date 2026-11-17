@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { useDemandeNotifications } from './demandeNotifications'
 import {
   LayoutDashboard, Truck, Upload, Users, Search, FileSearch, RotateCcw, LogOut, Menu, X, BookMarked, ClipboardList, Map, Activity, ShieldAlert, MailIcon, PackageX, ClipboardCheck, MessageSquarePlus, AlertTriangle, ListChecks, LayoutGrid
 } from 'lucide-react'
@@ -56,6 +57,7 @@ const navSections = [
 export default function AdminLayout() {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
+  const notifs = useDemandeNotifications({ toastOnNew: true })
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const initials = profile?.full_name
@@ -103,6 +105,9 @@ export default function AdminLayout() {
                 >
                   {item.icon}
                   {item.label}
+                  {item.to === '/admin/demandes' && notifs.total > 0 && (
+                    <span title="Réponses non lues" style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: 11, fontWeight: 700, padding: '1px 7px', minWidth: 18, textAlign: 'center' }}>{notifs.total}</span>
+                  )}
                 </NavLink>
               ))}
             </Fragment>

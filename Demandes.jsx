@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from './supabase'
 import { ageLabel, ageInWorkingDays, MAX_FILES, acceptFiles, makePending, uploadAttachment, PendingFile, StoredFile } from './attachments'
 import { useAuth } from './AuthContext'
+import { useDemandeNotifications, markDemandeRead, markAllDemandesRead } from './demandeNotifications'
 import toast from 'react-hot-toast'
 import {
   Plus, X, Package, ShieldAlert, PackagePlus, Search, MessageSquare,
@@ -39,6 +40,7 @@ export default function Demandes() {
   const canValidate = profile?.role === 'admin' || profile?.role === 'partner'
   const canLinkToSearch = false // les BP ne sont plus cliquables : simple texte à copier-coller
 
+  const notifs = useDemandeNotifications()
   const [demandes, setDemandes] = useState([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('ouverte')
@@ -51,6 +53,8 @@ export default function Demandes() {
     : demandes
 
   useEffect(() => { fetchDemandes() }, [statusFilter])
+  // Une nouvelle réponse est arrivée : on rafraîchit la liste sans écran de chargement
+  useEffect(() => { if (notifs.total > 0) fetchDemandes(true) }, [notifs.total])
 
   // Ouvrir automatiquement une demande si ?open=<id> est présent (venant de la recherche colis)
   useEffect(() => {
@@ -61,8 +65,8 @@ export default function Demandes() {
     }
   }, [searchParams, demandes])
 
-  async function fetchDemandes() {
-    setLoading(true)
+  async function fetchDemandes(silent = false) {
+    if (!silent) setLoading(true)
     let query = supabase
       .from('demandes')
       .select('*, created_by_user:created_by(full_name, email), resolved_by_user:resolved_by(full_name, email)')
@@ -107,9 +111,16 @@ export default function Demandes() {
             <p className="page-subtitle">Sécurisation, ajouts non planifiés, recherches de colis et autres demandes</p>
           </div>
           {canCreate && (
-            <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-              <Plus size={15} /> Nouvelle demande
-            </button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {notifs.total > 0 && (
+                <button className="btn btn-secondary" onClick={markAllDemandesRead}>
+                  <CheckCircle2 size={15} /> Tout marquer comme lu ({notifs.total})
+                </button>
+              )}
+              <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
+                <Plus size={15} /> Nouvelle demande
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -179,9 +190,17 @@ export default function Demandes() {
                 <tbody>
                   {filteredDemandes.map(d => {
                     const t = TYPES[d.type] || TYPES.autre
+                    const unread = notifs.byDemande[d.id] || 0
                     return (
-                      <tr key={d.id} style={{ cursor: 'pointer' }} onClick={() => openDetail(d)}>
-                        <td><span className={`badge ${t.badge}`}>{t.label}</span></td>
+                      <tr key={d.id} style={{ cursor: 'pointer', background: unread ? 'rgba(239,68,68,0.06)' : undefined, fontWeight: unread ? 600 : undefined }} onClick={() => openDetail(d)}>
+                        <td>
+                          <span className={`badge ${t.badge}`}>{t.label}</span>
+                          {unread > 0 && (
+                            <span style={{ marginLeft: 6, background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: 10, fontWeight: 700, padding: '2px 7px', whiteSpace: 'nowrap' }}>
+                              {unread > 1 ? `${unread} nouveautés` : 'Nouveau'}
+                            </span>
+                          )}
+                        </td>
                         <td>
                           {(d.bp || []).length === 0 ? (
                             <span style={{ color: 'var(--gray-300)' }}>—</span>
@@ -460,7 +479,14 @@ function DemandeDetailModal({ demande, basePath, canValidate, canLinkToSearch, o
 
   const t = TYPES[demande.type] || TYPES.autre
 
-  useEffect(() => { fetchReponses() }, [demande.id])
+  useEffect(() => { fetchReponses(); markDemandeRead(demande.id) }, [demande.id])
+
+  // Une réponse arrive pendant que la demande est ouverte : on l'affiche et on la marque comme lue
+  const notifs = useDemandeNotifications()
+  const unreadHere = notifs.byDemande[demande.id] || 0
+  useEffect(() => {
+    if (unreadHere > 0) { fetchReponses(true); markDemandeRead(demande.id) }
+  }, [unreadHere])
 
   // Le bucket est privé : on génère des liens temporaires (1 h) pour afficher les photos.
   useEffect(() => {
@@ -472,8 +498,8 @@ function DemandeDetailModal({ demande, basePath, canValidate, canLinkToSearch, o
     })
   }, [demande.id])
 
-  async function fetchReponses() {
-    setLoading(true)
+  async function fetchReponses(silent = false) {
+    if (!silent) setLoading(true)
     const { data } = await supabase
       .from('demande_reponses')
       .select('*, author:author_id(full_name, email, role)')

@@ -1,10 +1,12 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { useDemandeNotifications } from './demandeNotifications'
 import { LogOut, ClipboardList, AlertTriangle, LayoutGrid, Mail, Activity, Search } from 'lucide-react'
 
 export default function PartnerLayout() {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
+  const notifs = useDemandeNotifications({ toastOnNew: true })
 
   const initials = profile?.full_name
     ? profile.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -31,6 +33,9 @@ export default function PartnerLayout() {
           <NavLink to="/partner" end className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
             <ClipboardList size={16} />
             Suivi des tâches
+            {notifs.total > 0 && (
+              <span title="Réponses non lues" style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: 11, fontWeight: 700, padding: '1px 7px', minWidth: 18, textAlign: 'center' }}>{notifs.total}</span>
+            )}
           </NavLink>
           <NavLink to="/partner/defaillances" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
             <AlertTriangle size={16} />
