@@ -21,6 +21,7 @@ import EmailRecipients from './EmailRecipients'
 import OperatorHome from './OperatorHome'
 import ScanPage from './ScanPage'
 import Demandes from './Demandes'
+import Notifications from './Notifications'
 import Defaillances from './Defaillances'
 import Checklist from './Checklist'
 import PlanChargement from './PlanChargement'
@@ -89,6 +90,7 @@ export default function App() {
         <Route path="plan-chargement" element={<PlanChargement />} />
         <Route path="colis-retour" element={<Navigate to="/admin/suivi-tournees" replace />} />
         <Route path="demandes" element={<Demandes />} />
+        <Route path="notifications" element={<Notifications />} />
         <Route path="defaillances" element={<Defaillances />} />
         <Route path="scan/:tourId" element={<ScanPage />} />
       </Route>
@@ -104,6 +106,7 @@ export default function App() {
       {/* Partner routes — accès restreint au suivi des tâches et à la recherche colis */}
       <Route path="/partner" element={<PrivateRoute roles={['partner']}><PartnerLayout /></PrivateRoute>}>
         <Route index element={<Demandes />} />
+        <Route path="notifications" element={<Notifications />} />
         <Route path="defaillances" element={<Defaillances />} />
         <Route path="search-parcel" element={<SearchParcel />} />
         <Route path="suivi-tournees" element={<TrackingRoute><SuiviTournees readOnly /></TrackingRoute>} />

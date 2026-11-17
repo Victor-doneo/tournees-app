@@ -13,7 +13,7 @@ import {
 const PHOTO_BUCKET = 'demandes-photos'
 const MAX_PHOTOS = MAX_FILES
 
-const TYPES = {
+export const TYPES = {
   securisation: { label: 'Sécurisation', badge: 'badge-red', icon: ShieldAlert },
   ajout_non_planifie: { label: 'Ajout non planifié dans une tournée', badge: 'badge-orange', icon: PackagePlus },
   ajout_non_planifie_retour: { label: 'Ajout non planifié en retour', badge: 'badge-purple', icon: PackagePlus },
@@ -24,7 +24,7 @@ const TYPES = {
 
 const BP_REQUIRED_TYPES = ['securisation', 'ajout_non_planifie', 'ajout_non_planifie_retour', 'recherche_colis', 'reception_reflex']
 
-const STATUS_META = {
+export const STATUS_META = {
   ouverte: { label: 'Ouverte', badge: 'badge-orange' },
   resolue: { label: 'Résolue', badge: 'badge-green' },
   annulee: { label: 'Annulée', badge: 'badge-red' },

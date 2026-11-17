@@ -29,7 +29,7 @@ insert into public.supplier_contacts (supplier, email, full_name) values
   ('SOLUTRANS',                'solutrans.express94@gmail.com','Solutrans Express')
 on conflict (supplier, email) do nothing;
 
--- À compléter : sociétés de YOUSSEF TAYEB (yousseftayeb202@gmail.com) et Kamel Zribi (kamelzribi83@gmail.com)
--- insert into public.supplier_contacts (supplier, email, full_name) values
---   ('<SOCIETE>', 'yousseftayeb202@gmail.com', 'YOUSSEF TAYEB'),
---   ('<SOCIETE>', 'kamelzribi83@gmail.com', 'Kamel Zribi');
+insert into public.supplier_contacts (supplier, email, full_name) values
+  ('ADEMO', 'yousseftayeb202@gmail.com', 'YOUSSEF TAYEB'),
+  ('CLS TRANSPORT', 'kamelzribi83@gmail.com', 'Kamel Zribi')
+on conflict (supplier, email) do nothing;

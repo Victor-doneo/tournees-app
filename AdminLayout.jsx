@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useDemandeNotifications } from './demandeNotifications'
 import {
-  LayoutDashboard, Truck, Upload, Users, Search, FileSearch, RotateCcw, LogOut, Menu, X, BookMarked, ClipboardList, Map, Activity, ShieldAlert, MailIcon, PackageX, ClipboardCheck, MessageSquarePlus, AlertTriangle, ListChecks, LayoutGrid
+  LayoutDashboard, Truck, Upload, Users, Search, FileSearch, RotateCcw, LogOut, Menu, X, BookMarked, ClipboardList, Map, Activity, ShieldAlert, MailIcon, PackageX, ClipboardCheck, MessageSquarePlus, AlertTriangle, ListChecks, LayoutGrid, Bell
 } from 'lucide-react'
 
 // Menu regroupé par section (le Dashboard est seul, en haut)
@@ -12,6 +12,7 @@ const navSections = [
     label: null,
     items: [
       { to: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={16} />, end: true },
+      { to: '/admin/notifications', label: 'Notifications', icon: <Bell size={16} /> },
     ],
   },
   {
@@ -105,7 +106,7 @@ export default function AdminLayout() {
                 >
                   {item.icon}
                   {item.label}
-                  {item.to === '/admin/demandes' && notifs.total > 0 && (
+                  {(item.to === '/admin/demandes' || item.to === '/admin/notifications') && notifs.total > 0 && (
                     <span title="Réponses non lues" style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: 11, fontWeight: 700, padding: '1px 7px', minWidth: 18, textAlign: 'center' }}>{notifs.total}</span>
                   )}
                 </NavLink>
