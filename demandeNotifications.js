@@ -9,6 +9,16 @@ import { useAuth } from './AuthContext'
 const EVENT = 'demande-notifs-changed'
 const POLL_MS = 30000
 
+// Ajoute le nom de l'auteur (actor_id n'a pas de clé étrangère, donc pas de jointure possible)
+async function withActors(rows) {
+  const ids = [...new Set((rows || []).map(r => r.actor_id).filter(Boolean))]
+  if (ids.length === 0) return rows || []
+  const { data } = await supabase.from('users').select('id, full_name, email').in('id', ids)
+  const map = {}
+  ;(data || []).forEach(u => { map[u.id] = u })
+  return rows.map(r => ({ ...r, actor: map[r.actor_id] || null }))
+}
+
 export function notifyDemandeNotifsChanged() {
   window.dispatchEvent(new Event(EVENT))
 }
@@ -47,13 +57,14 @@ export function useDemandeNotifications({ toastOnNew = false } = {}) {
     async function load() {
       const { data, error } = await supabase
         .from('demande_notifications')
-        .select('id, demande_id, kind, message, actor:actor_id(full_name, email)')
+        .select('id, demande_id, kind, message, actor_id')
         .is('read_at', null)
         .order('created_at', { ascending: false })
         .limit(500)
+      if (error) console.error('Notifications :', error.message)
       if (stopped || error) return
 
-      const rows = data || []
+      const rows = await withActors(data || [])
       const byDemande = {}
       rows.forEach(r => { byDemande[r.demande_id] = (byDemande[r.demande_id] || 0) + 1 })
       setState({ total: rows.length, byDemande })
@@ -94,8 +105,9 @@ export function useDemandeNotifications({ toastOnNew = false } = {}) {
 export async function fetchRecentNotifications(limit = 60) {
   const { data, error } = await supabase
     .from('demande_notifications')
-    .select('id, demande_id, kind, message, created_at, read_at, actor:actor_id(full_name, email), demande:demande_id(id, type, bp, commentaire, status)')
+    .select('id, demande_id, kind, message, created_at, read_at, actor_id, demande:demande_id(id, type, bp, commentaire, status)')
     .order('created_at', { ascending: false })
     .limit(limit)
-  return error ? [] : (data || [])
+  if (error) { console.error('Notifications :', error.message); return [] }
+  return withActors(data || [])
 }
