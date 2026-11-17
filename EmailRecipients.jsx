@@ -3,10 +3,12 @@ import { supabase } from './supabase'
 import { Plus, Trash2, Mail, ToggleLeft, ToggleRight, FileText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import MailTemplateEditor from './MailTemplateEditor'
+import SupplierContacts from './SupplierContacts'
 
 const TABS = {
   rapport: { table: 'email_recipients', title: 'Rapport journalier', sub: 'Gérez les destinataires du rapport journalier automatique', hint: 'Le rapport est envoyé automatiquement chaque jour à 23h59.' },
   plan: { table: 'loading_plan_recipients', title: 'Plan de chargement', sub: 'Destinataires du mail PLAN DE CHARGEMENT/ CCV / ANTONY / JJ.MM.AAAA (envoi depuis la page « Plan de chargement »)', hint: 'Un mail par journée, envoyé manuellement via le bouton « Envoyer par mail ».' },
+  transporteur: { table: null, title: 'Mail transporteur', sub: 'Adresses de contact de chaque société de transport' },
 }
 
 export default function EmailRecipients({ only }) {
@@ -96,7 +98,7 @@ export default function EmailRecipients({ only }) {
             <h2 className="page-title">Gestion mailing</h2>
             <p className="page-subtitle">{T.sub}</p>
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              {Object.entries(TABS).filter(([k]) => !only || k === 'plan').map(([k, v]) => (
+              {Object.entries(TABS).filter(([k]) => !only ? true : k === 'plan').map(([k, v]) => (
                 <button key={k} className={`btn btn-sm ${tab === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab(k)}>{v.title}</button>
               ))}
             </div>
@@ -117,6 +119,7 @@ export default function EmailRecipients({ only }) {
         </div>
       </div>
 
+      {tab === 'transporteur' ? <SupplierContacts /> : (
       <div className="page-body" style={{ maxWidth: showModele && tab === 'plan' ? 760 : 560 }}>
         {tab === 'plan' && showModele && (
           <div style={{ marginBottom: 20 }}><MailTemplateEditor embedded /></div>
@@ -207,6 +210,7 @@ export default function EmailRecipients({ only }) {
           )}
         </div>
       </div>
+      )}
     </>
   )
 }
