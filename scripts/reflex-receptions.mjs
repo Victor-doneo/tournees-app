@@ -245,12 +245,11 @@ async function closeResults() {
 // l'utilisateur ARTICLE_USER (par défaut « Victor AMBLARD ») dont la date est >= au jour de l'accusé de réception.
 const ARTICLE_USER = (process.env.ARTICLE_USER || 'Victor AMBLARD')
 const norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
-// Dates lues : jj/mm/aaaa (ou . ou -), jj/mm/aa, aaaa-mm-jj -> clé aaaammjj
+// Dates lues : j/m/aa, jj/mm/aa, jj/mm/aaaa (séparateurs / . -), aaaa-mm-jj -> clé aaaammjj
 const dateKeys = t => {
-  const x = String(t || ''), out = []
-  for (const m of x.matchAll(/(\d{2})[\/.\-](\d{2})[\/.\-](\d{4})/g)) out.push(m[3] + m[2] + m[1])
-  for (const m of x.matchAll(/(\d{4})-(\d{2})-(\d{2})/g)) out.push(m[1] + m[2] + m[3])
-  for (const m of x.matchAll(/(?<![\d\/.\-])(\d{2})\/(\d{2})\/(\d{2})(?![\d\/])/g)) out.push('20' + m[3] + m[2] + m[1])
+  const x = String(t || ''), out = [], p2 = n => String(n).padStart(2, '0')
+  for (const m of x.matchAll(/(?<![\d\/.\-])(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4}|\d{2})(?![\d\/.\-])/g)) out.push((m[3].length === 2 ? '20' + m[3] : m[3]) + p2(m[2]) + p2(m[1]))
+  for (const m of x.matchAll(/(?<![\d\/.\-])(\d{4})-(\d{2})-(\d{2})(?![\d\/.\-])/g)) out.push(m[1] + m[2] + m[3])
   return out
 }
 
