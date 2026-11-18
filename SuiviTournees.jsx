@@ -158,7 +158,9 @@ export default function SuiviTournees({ readOnly = false }) {
               <td>{r.item_name}<div style={{ color: 'var(--gray-400)', fontSize: 12 }}>{(r.item_description || '').slice(0, 60)}</div></td>
               <td>{r.customer_name}<div style={{ color: 'var(--gray-400)', fontSize: 12 }}>{[r.zip, r.city].filter(Boolean).join(' ')}</div></td>
               <td><span className="badge badge-orange">{r.reason}</span></td>
-              <td>{r.reflex_reception ? <b>{r.reflex_reception}</b> : (/contre reprise/i.test(r.reason || '') ? <span style={{ color: 'var(--gray-400)', fontSize: 12 }} title={r.reflex_note || ''}>{r.reflex_note || 'à venir'}</span> : '—')}</td>
+              <td>{r.reflex_reception ? <b>{r.reflex_reception}</b> : (/contre reprise/i.test(r.reason || '') ? (/Aucune ligne LCR|Absence de ligne/i.test(r.reflex_note || '')
+                ? <span style={{ color: 'var(--red)', fontSize: 12, fontWeight: 600 }} title="REFLEX ne contient aucune ligne de réception LCR pour ce BP">Absence de ligne de réception</span>
+                : <span style={{ color: 'var(--gray-400)', fontSize: 12 }} title={r.reflex_note || ''}>{r.reflex_note || 'à venir'}</span>) : '—')}</td>
               <td>{r.received_at ? <span className="badge badge-green">{hhmm(r.received_at)}</span> : readOnly ? <span style={{ color: 'var(--gray-400)' }}>En attente</span> : <button className="btn btn-secondary btn-sm" onClick={() => receive([r])}>Accuser réception</button>}</td>
               <td>{r.printed_at ? hhmm(r.printed_at) : '—'}</td>
             </tr>))}</tbody>

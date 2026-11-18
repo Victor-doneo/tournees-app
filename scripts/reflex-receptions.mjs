@@ -398,7 +398,7 @@ try {
       const pickRow = lcr[lcr.length - 1]
       const pick = pickRow ? [, , , , , recOf(pickRow)] : null
       console.log(`BP ${bp} : ${cells.length} réception(s), ${lcr.length} LCR -> ${pick ? pick[5] : 'aucune'}`)
-      out.push({ items: row.items, reflex_reception: pick ? String(pick[5]).trim() : null, reflex_note: pick ? (lcr.length > 1 ? `${lcr.length} lignes LCR : la plus récente retenue` : null) : (cells.length ? 'Aucune ligne LCR dans REFLEX' : 'Référence introuvable dans REFLEX') })
+      out.push({ items: row.items, reflex_reception: pick ? String(pick[5]).trim() : null, reflex_note: pick ? (lcr.length > 1 ? `${lcr.length} lignes LCR : la plus récente retenue` : null) : (cells.length ? 'Absence de ligne de réception' : 'Référence introuvable dans REFLEX') })
       await closeResults()
     } catch (e) { console.log(`BP ${bp} : erreur ${e.message}`); await shot(`erreur-${bp}`); await closeResults() }
   }
