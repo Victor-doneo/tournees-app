@@ -343,8 +343,8 @@ async function articleSearchCheck(bp, minKey) {
     for (const fr of page.frames()) {
       const res = await scan(fr)
       diag.push({ frame: fr.url().slice(0, 80), fields: res.fields, texts: res.texts })
-      const cands = res.fields.filter(f => !f.topRight && f.w > 40)
-      const f = cands.find(f => /article/i.test(f.label)) || cands.find(f => /r[ée]f[ée]rence|code|ean|gtin/i.test(f.label)) || cands[0]
+      const cands = res.fields.filter(f => !f.topRight && f.w > 40 && f.x >= 0 && f.y >= 0) // hors champs cachés (coordonnées négatives)
+      const f = cands.find(f => /^BP\s+Article/i.test(f.label)) || cands.find(f => /article/i.test(f.label)) || cands.find(f => /r[ée]f[ée]rence|code|ean|gtin/i.test(f.label)) || cands[0]
       if (f && !target) target = { fr, f }
     }
     if (!target) await sleep(2000)
