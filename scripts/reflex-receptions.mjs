@@ -83,7 +83,7 @@ const after18 = pHour(nowIso) >= 18
 const verifGroups = new Map()
 {
   const { data, error } = await sb.from('return_labels')
-    .select('id, barcode, reason, tour_code, task_date, reflex_recv_status, reflex_recv_checked_at, reflex_demande_id')
+    .select('id, barcode, reason, tour_code, task_date, received_at, reflex_recv_status, reflex_recv_checked_at, reflex_demande_id')
     .not('received_at', 'is', null).gte('task_date', VERIF_FROM).or('reflex_recv_status.is.null,reflex_recv_status.neq.receptionne').order('reflex_recv_checked_at', { ascending: true, nullsFirst: true }).limit(500)
   if (error) console.log('Vérification des réceptions ignorée (migration supabase_migration_reflex_verification.sql lancée ?) :', error.message)
   else for (const r of data || []) {
@@ -239,6 +239,71 @@ async function closeResults() {
   }
 }
 
+
+// ── Contrôle complémentaire : écran « Recherche article new » ─────────────────────────────
+// Si le BP remonte « manquant » / « introuvable » dans Réceptions, on cherche une ligne de
+// l'utilisateur ARTICLE_USER (par défaut « Victor AMBLARD ») dont la date est >= au jour de l'accusé de réception.
+const ARTICLE_USER = (process.env.ARTICLE_USER || 'Victor AMBLARD')
+const norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
+const dateKeys = t => [...String(t || '').matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)].map(m => m[3] + m[2] + m[1])
+
+async function openArticleSearch() {
+  const ready = () => page.locator('div.a-outputtext, .dijitDialogTitle, .a-window-title', { hasText: /Recherche\s+article/i }).filter({ visible: true }).count()
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const boxId = await page.evaluate(() => { const c = [...document.querySelectorAll('input[type=text], input:not([type])')].filter(i => { const r = i.getBoundingClientRect(); return i.offsetParent !== null && r.y < 70 && r.x > window.innerWidth * 0.5 && r.width > 40 }).sort((a, b) => b.getBoundingClientRect().x - a.getBoundingClientRect().x)[0]; return c ? c.id || null : null })
+    if (!boxId) { console.log('  zone de recherche en haut à droite introuvable'); return false }
+    const inp = page.locator(`[id="${boxId}"]`)
+    await inp.click().catch(() => {}); await inp.fill('').catch(() => {}); await inp.type('Recherche article', { delay: 80 }).catch(() => {})
+    await sleep(2500)
+    const hit = page.getByText(/Recherche\s+article\s+new/i).filter({ visible: true }).first()
+    if (!(await hit.count())) {
+      console.log('  recherche menu : « Recherche article new » absente ; textes proposés :', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.dijitMenuItem, [role=option], li')].filter(e => e.offsetParent !== null).map(e => e.textContent.trim().slice(0, 60)).slice(0, 12))))
+      await shot(`article-menu-${attempt}`)
+      continue
+    }
+    await hit.dblclick().catch(() => {})
+    for (let i = 0; i < 20 && !(await ready()); i++) await sleep(1000)
+    await sleep(1500)
+    return true
+  }
+  return false
+}
+
+// Retourne { found, date, rows } : found = une ligne de ARTICLE_USER datée >= minKey (aaaammjj)
+async function articleSearchCheck(bp, minKey) {
+  if (!(await openArticleSearch())) return { found: false, error: 'écran Recherche article new introuvable' }
+  // Champ de saisie : on privilégie celui dont le libellé (sur la même ligne) parle d'article / référence / code
+  const fields = await page.evaluate(() => {
+    const vis = e => e.offsetParent !== null
+    const labs = [...document.querySelectorAll('div.a-outputtext')].filter(vis).map(e => ({ t: e.textContent.trim(), r: e.getBoundingClientRect() }))
+    return [...document.querySelectorAll('input')].filter(i => { const r = i.getBoundingClientRect(); return vis(i) && r.y > 70 && r.width > 40 && (i.type === 'text' || !i.type) }).map(i => {
+      const r = i.getBoundingClientRect()
+      const lab = labs.filter(l => Math.abs(l.r.y - r.y) < 10 && l.r.x < r.x).sort((a, b) => b.r.x - a.r.x)[0]
+      return { id: i.id, label: lab ? lab.t : '' }
+    })
+  })
+  console.log('  Recherche article : champs de saisie :', JSON.stringify(fields.slice(0, 8)))
+  const field = fields.find(f => /article/i.test(f.label)) || fields.find(f => /r[ée]f[ée]rence|code|ean|gtin/i.test(f.label)) || fields[0]
+  if (!field) { await shot(`article-champ-${bp}`); return { found: false, error: 'champ de saisie introuvable' } }
+  const input = page.locator(`[id="${field.id}"]`)
+  await input.click(); await input.fill(''); await input.type(bp)
+  await input.press('Enter').catch(() => {})
+  const ok = page.locator('button.a-default-button, button', { hasText: /^(OK|Rechercher|Recherche|Valider)$/ }).filter({ visible: true }).last()
+  if (await ok.count()) await ok.dblclick().catch(() => {})
+  await sleep(3500)
+  const readAll = () => page.evaluate(() => [...document.querySelectorAll('.dgrid-row')].filter(r => r.offsetParent !== null).map(r => [...r.querySelectorAll('td.dgrid-cell')].map(c => c.innerText.trim().replace(/\s+/g, ' '))))
+  let rows = await readAll()
+  for (let i = 0; i < 6 && !rows.length; i++) { await sleep(1500); rows = await readAll() }
+  const who = norm(ARTICLE_USER)
+  const mine = rows.filter(r => norm(r.join(' ')).includes(who))
+  const best = mine.map(r => ({ r, key: dateKeys(r.join(' ')).sort().pop() || '' })).filter(x => x.key).sort((a, b) => a.key.localeCompare(b.key)).pop()
+  console.log(`  Recherche article ${bp} : ${rows.length} ligne(s), ${mine.length} de « ${ARTICLE_USER} »${best ? `, plus récente ${best.key.slice(6)}/${best.key.slice(4, 6)}/${best.key.slice(0, 4)}` : ''}`)
+  if (!rows.length) await shot(`article-vide-${bp}`)
+  await closeResults()
+  if (best && best.key >= minKey) return { found: true, date: `${best.key.slice(6)}/${best.key.slice(4, 6)}/${best.key.slice(0, 4)}`, rows: rows.length }
+  return { found: false, rows: rows.length }
+}
+
 const out = [], vOut = []
 try {
   await login()
@@ -289,8 +354,17 @@ try {
         line = dateOf(last)
       }
       console.log(`Vérif BP ${bp} : ${rows.length} ligne(s), plus récente ${line || '—'} -> ${status}`)
-      vOut.push({ ...v, status, line })
       await closeResults()
+      if (status !== 'receptionne') {
+        // Contrôle complémentaire : ligne de Victor AMBLARD dans « Recherche article new », datée >= accusé de réception
+        const minKey = v.labels.map(l => l.received_at ? pDay(l.received_at).replace(/-/g, '') : '').filter(Boolean).sort().pop() || '00000000'
+        try {
+          const alt = await articleSearchCheck(bp, minKey)
+          if (alt.error) console.log(`  Recherche article ${bp} : ${alt.error}`)
+          if (alt.found) { status = 'receptionne'; line = `${alt.date} (Recherche article)`; console.log(`Vérif BP ${bp} -> receptionne (Recherche article, ${ARTICLE_USER} le ${alt.date})`) }
+        } catch (e) { console.log(`  Recherche article ${bp} : erreur ${e.message}`); await closeResults() }
+      }
+      vOut.push({ ...v, status, line })
     } catch (e) { console.log(`Vérif BP ${bp} : erreur ${e.message}`); await shot(`erreur-verif-${bp}`); await closeResults() }
   }
 } catch (e) {
