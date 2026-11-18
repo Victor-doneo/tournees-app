@@ -245,7 +245,14 @@ async function closeResults() {
 // l'utilisateur ARTICLE_USER (par défaut « Victor AMBLARD ») dont la date est >= au jour de l'accusé de réception.
 const ARTICLE_USER = (process.env.ARTICLE_USER || 'Victor AMBLARD')
 const norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
-const dateKeys = t => [...String(t || '').matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)].map(m => m[3] + m[2] + m[1])
+// Dates lues : jj/mm/aaaa (ou . ou -), jj/mm/aa, aaaa-mm-jj -> clé aaaammjj
+const dateKeys = t => {
+  const x = String(t || ''), out = []
+  for (const m of x.matchAll(/(\d{2})[\/.\-](\d{2})[\/.\-](\d{4})/g)) out.push(m[3] + m[2] + m[1])
+  for (const m of x.matchAll(/(\d{4})-(\d{2})-(\d{2})/g)) out.push(m[1] + m[2] + m[3])
+  for (const m of x.matchAll(/(?<![\d\/.\-])(\d{2})\/(\d{2})\/(\d{2})(?![\d\/])/g)) out.push('20' + m[3] + m[2] + m[1])
+  return out
+}
 
 // Champs de saisie visibles (page + cadres), hors zone de recherche du menu (en haut à droite)
 async function visibleInputIds() {
@@ -357,6 +364,8 @@ async function articleSearchCheck(bp, minKey) {
   const who = norm(ARTICLE_USER)
   const mine = rows.filter(r => norm(r.join(' ')).includes(who))
   const best = mine.map(r => ({ r, key: dateKeys(r.join(' ')).sort().pop() || '' })).filter(x => x.key).sort((a, b) => a.key.localeCompare(b.key)).pop()
+  console.log('  lignes de ' + ARTICLE_USER + ' :', JSON.stringify(mine.slice(0, 6)))
+  if (!mine.length) console.log('  premières lignes :', JSON.stringify(rows.slice(0, 3)))
   console.log(`  Recherche article ${bp} : ${rows.length} ligne(s), ${mine.length} de « ${ARTICLE_USER} »${best ? `, plus récente ${best.key.slice(6)}/${best.key.slice(4, 6)}/${best.key.slice(0, 4)}` : ''}`)
   if (!rows.length) await shot(`article-vide-${bp}`)
   await closeResults()
