@@ -272,26 +272,43 @@ async function openArticleSearch() {
 // Retourne { found, date, rows } : found = une ligne de ARTICLE_USER datée >= minKey (aaaammjj)
 async function articleSearchCheck(bp, minKey) {
   if (!(await openArticleSearch())) return { found: false, error: 'écran Recherche article new introuvable' }
-  // Champ de saisie : on privilégie celui dont le libellé (sur la même ligne) parle d'article / référence / code
-  const fields = await page.evaluate(() => {
-    const vis = e => e.offsetParent !== null
-    const labs = [...document.querySelectorAll('div.a-outputtext')].filter(vis).map(e => ({ t: e.textContent.trim(), r: e.getBoundingClientRect() }))
-    return [...document.querySelectorAll('input')].filter(i => { const r = i.getBoundingClientRect(); return vis(i) && r.y > 70 && r.width > 40 && (i.type === 'text' || !i.type) }).map(i => {
-      const r = i.getBoundingClientRect()
-      const lab = labs.filter(l => Math.abs(l.r.y - r.y) < 10 && l.r.x < r.x).sort((a, b) => b.r.x - a.r.x)[0]
-      return { id: i.id, label: lab ? lab.t : '' }
-    })
-  })
-  console.log('  Recherche article : champs de saisie :', JSON.stringify(fields.slice(0, 8)))
-  const field = fields.find(f => /article/i.test(f.label)) || fields.find(f => /r[ée]f[ée]rence|code|ean|gtin/i.test(f.label)) || fields[0]
-  if (!field) { await shot(`article-champ-${bp}`); return { found: false, error: 'champ de saisie introuvable' } }
-  const input = page.locator(`[id="${field.id}"]`)
+  // Champ de saisie : on cherche dans la page ET dans les cadres intégrés (iframes), en excluant la zone de recherche du menu
+  // (en haut à droite). On privilégie le champ dont le libellé (sur la même ligne) parle d'article / référence / code.
+  const scan = fr => fr.evaluate(() => {
+    const vis = e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
+    const labs = [...document.querySelectorAll('div.a-outputtext, label, span')].filter(vis).filter(e => e.children.length === 0 && e.textContent.trim()).map(e => ({ t: e.textContent.trim(), r: e.getBoundingClientRect() }))
+    const inputs = [...document.querySelectorAll('input, textarea')].filter(i => vis(i) && !['hidden', 'checkbox', 'radio', 'button', 'submit', 'image'].includes(i.type))
+    return {
+      fields: inputs.map(i => {
+        const r = i.getBoundingClientRect()
+        const lab = labs.filter(l => Math.abs((l.r.y + l.r.height / 2) - (r.y + r.height / 2)) < 14 && l.r.x < r.x).sort((a, b) => b.r.x - a.r.x)[0]
+        return { id: i.id, name: i.name || '', x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), topRight: r.y < 70 && r.x > window.innerWidth * 0.5, label: lab ? lab.t : '', value: i.value || '' }
+      }),
+      texts: labs.slice(0, 30).map(l => l.t.slice(0, 40)),
+    }
+  }).catch(() => ({ fields: [], texts: [] }))
+  let target = null, diag = []
+  for (let attempt = 1; attempt <= 6 && !target; attempt++) {
+    diag = []
+    for (const fr of page.frames()) {
+      const res = await scan(fr)
+      diag.push({ frame: fr.url().slice(0, 80), fields: res.fields, texts: res.texts })
+      const cands = res.fields.filter(f => !f.topRight && f.w > 40)
+      const f = cands.find(f => /article/i.test(f.label)) || cands.find(f => /r[ée]f[ée]rence|code|ean|gtin/i.test(f.label)) || cands[0]
+      if (f && !target) target = { fr, f }
+    }
+    if (!target) await sleep(2000)
+  }
+  console.log('  Recherche article : champs/textes visibles :', JSON.stringify(diag.map(d => ({ frame: d.frame, fields: d.fields.slice(0, 8), texts: d.texts.slice(0, 20) }))))
+  if (!target) { await shot(`article-champ-${bp}`); return { found: false, error: 'champ de saisie introuvable' } }
+  console.log(`  Recherche article : champ retenu « ${target.f.label || target.f.name || target.f.id} »`)
+  const input = target.f.id ? target.fr.locator(`[id="${target.f.id}"]`) : target.fr.locator('input').nth(0)
   await input.click(); await input.fill(''); await input.type(bp)
   await input.press('Enter').catch(() => {})
-  const ok = page.locator('button.a-default-button, button', { hasText: /^(OK|Rechercher|Recherche|Valider)$/ }).filter({ visible: true }).last()
+  const ok = target.fr.locator('button.a-default-button, button', { hasText: /^(OK|Rechercher|Recherche|Valider)$/ }).filter({ visible: true }).last()
   if (await ok.count()) await ok.dblclick().catch(() => {})
   await sleep(3500)
-  const readAll = () => page.evaluate(() => [...document.querySelectorAll('.dgrid-row')].filter(r => r.offsetParent !== null).map(r => [...r.querySelectorAll('td.dgrid-cell')].map(c => c.innerText.trim().replace(/\s+/g, ' '))))
+  const readAll = () => target.fr.evaluate(() => [...document.querySelectorAll('.dgrid-row')].filter(r => r.offsetParent !== null).map(r => [...r.querySelectorAll('td.dgrid-cell')].map(c => c.innerText.trim().replace(/\s+/g, ' '))))
   let rows = await readAll()
   for (let i = 0; i < 6 && !rows.length; i++) { await sleep(1500); rows = await readAll() }
   const who = norm(ARTICLE_USER)
