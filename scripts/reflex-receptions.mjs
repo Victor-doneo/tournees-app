@@ -247,24 +247,47 @@ const ARTICLE_USER = (process.env.ARTICLE_USER || 'Victor AMBLARD')
 const norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 const dateKeys = t => [...String(t || '').matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)].map(m => m[3] + m[2] + m[1])
 
+// Un champ de saisie (hors zone de recherche du menu) est-il visible, dans la page ou un cadre ?
+async function articleInputVisible() {
+  for (const fr of page.frames()) {
+    const n = await fr.evaluate(() => [...document.querySelectorAll('input[type=text], input:not([type])')].filter(i => { const r = i.getBoundingClientRect(); return i.getClientRects().length > 0 && r.width > 40 && !(r.y < 70 && r.x > window.innerWidth * 0.5) }).length).catch(() => 0)
+    if (n > 0) return true
+  }
+  return false
+}
+
 async function openArticleSearch() {
-  const ready = () => page.locator('div.a-outputtext, .dijitDialogTitle, .a-window-title', { hasText: /Recherche\s+article/i }).filter({ visible: true }).count()
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  if (await articleInputVisible()) return true
+  for (let attempt = 1; attempt <= 4; attempt++) {
     const boxId = await page.evaluate(() => { const c = [...document.querySelectorAll('input[type=text], input:not([type])')].filter(i => { const r = i.getBoundingClientRect(); return i.offsetParent !== null && r.y < 70 && r.x > window.innerWidth * 0.5 && r.width > 40 }).sort((a, b) => b.getBoundingClientRect().x - a.getBoundingClientRect().x)[0]; return c ? c.id || null : null })
     if (!boxId) { console.log('  zone de recherche en haut à droite introuvable'); return false }
     const inp = page.locator(`[id="${boxId}"]`)
     await inp.click().catch(() => {}); await inp.fill('').catch(() => {}); await inp.type('Recherche article', { delay: 80 }).catch(() => {})
     await sleep(2500)
-    const hit = page.getByText(/Recherche\s+article\s+new/i).filter({ visible: true }).first()
-    if (!(await hit.count())) {
-      console.log('  recherche menu : « Recherche article new » absente ; textes proposés :', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.dijitMenuItem, [role=option], li')].filter(e => e.offsetParent !== null).map(e => e.textContent.trim().slice(0, 60)).slice(0, 12))))
-      await shot(`article-menu-${attempt}`)
-      continue
+    // L'entrée peut être dans la liste de suggestions ou dans l'arborescence du menu
+    const entries = page.locator('.dijitMenuItem, .dijitMenuItemLabel, [role=option], .dijitTreeLabel', { hasText: /^\s*Recherche\s+Article\s+New\s*$/i }).filter({ visible: true })
+    let n = await entries.count()
+    let hitAll = entries
+    if (!n) { hitAll = page.getByText(/^\s*Recherche\s+Article\s+New\s*$/i).filter({ visible: true }); n = await hitAll.count() }
+    if (!n) { console.log('  recherche menu : « Recherche Article New » absente'); await shot(`article-menu-${attempt}`); continue }
+    for (let k = 0; k < n && !(await articleInputVisible()); k++) {
+      const it = hitAll.nth(k)
+      const b = await it.boundingBox().catch(() => null)
+      if (!b) continue
+      console.log(`  « Recherche Article New » #${k} à (${Math.round(b.x)}, ${Math.round(b.y)}), tentative ${attempt}`)
+      await it.scrollIntoViewIfNeeded().catch(() => {})
+      const row = it.locator('xpath=ancestor-or-self::*[contains(@class,"dijitTreeRow") or contains(@class,"dijitMenuItem")][1]')
+      const target = (await row.count()) ? row.first() : it
+      const mode = attempt % 4
+      if (mode === 1) await target.dblclick({ delay: 120 }).catch(() => {})
+      else if (mode === 2) { await it.click().catch(() => {}); await sleep(400); await page.keyboard.press('Enter') }
+      else if (mode === 3) await it.dblclick({ delay: 200 }).catch(() => {})
+      else { await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await sleep(80); await page.mouse.up(); await sleep(120); await page.mouse.down(); await sleep(80); await page.mouse.up() }
+      for (let i = 0; i < 20 && !(await articleInputVisible()); i++) await sleep(1000)
     }
-    await hit.dblclick().catch(() => {})
-    for (let i = 0; i < 20 && !(await ready()); i++) await sleep(1000)
-    await sleep(1500)
-    return true
+    if (await articleInputVisible()) { await sleep(1000); return true }
+    await shot(`article-ouverture-${attempt}`)
+    console.log(`  ouverture de Recherche Article New : tentative ${attempt} sans résultat`)
   }
   return false
 }
