@@ -471,19 +471,26 @@ if (vOut.length) {
     }
   }
 }
-// Retours en retard : déjà réceptionnés dans REFLEX -> pas de demande (on le note) ; sinon demande « Vérifier que le colis n'est pas revenu »
+// Retours en retard : déjà réceptionnés dans REFLEX -> pas de demande, mais une défaillance (accusé de réception manquant) ; sinon demande « Vérifier que le colis n'est pas revenu »
 let lateDemandes = 0, lateInReflex = 0
 if (lateCheck.length) {
   const creator = process.env.DEMANDE_USER_ID || (await sb.from('users').select('id').eq('role', 'admin').limit(1)).data?.[0]?.id
   for (const g of lateCheck) {
     if (g.error) continue // contrôle REFLEX impossible : on réessaiera au prochain passage
     const ids = g.labels.map(l => l.id)
+    const tours = [...new Set(g.labels.map(l => `${l.tour_code || '—'} du ${l.task_date.split('-').reverse().join('.')}`))].join(', ')
     if (g.found) {
+      // Réceptionné dans REFLEX mais accusé de réception non fait dans Superflash -> défaillance (processus « Retour entrant »)
+      const { error: fe } = await sb.from('defaillances').insert({
+        type: 'autre', processus: 'Retour entrant', bp: [g.bp], photos: [], status: 'ouverte', created_by: creator,
+        commentaire: `Colis réceptionné dans REFLEX (ligne ${ARTICLE_USER} du ${g.date}) mais accusé de réception non effectué dans Superflash. Retour attendu : ${tours}.`,
+      })
+      if (fe) { console.log(`Défaillance non créée pour ${g.bp} : ${fe.message}`); continue } // on réessaiera au prochain passage
+      // Marqué « réceptionné dans REFLEX » : le colis sort des prochains contrôles (donc une seule défaillance par colis)
       await sb.from('return_labels').update({ reflex_recv_status: 'receptionne', reflex_recv_checked_at: new Date().toISOString(), reflex_recv_line: `${g.date} (Recherche article)` }).in('id', ids)
       lateInReflex++
       continue
     }
-    const tours = [...new Set(g.labels.map(l => `${l.tour_code || '—'} du ${l.task_date.split('-').reverse().join('.')}`))].join(', ')
     const { data: dem, error: de } = await sb.from('demandes').insert({
       type: 'autre', bp: [g.bp], photos: [], status: 'ouverte', created_by: creator,
       commentaire: `Vérifier que le colis n'est pas revenu. Retour attendu (${tours}) non réceptionné depuis plus de ${OVERDUE_DAYS} jours (contrôlé dans REFLEX : pas de réception).`,
@@ -492,8 +499,8 @@ if (lateCheck.length) {
     lateDemandes++
     await sb.from('return_labels').update({ overdue_demande_id: dem.id }).in('id', ids)
   }
-  console.log(`Retours en retard : ${lateDemandes} demande(s) créée(s), ${lateInReflex} déjà réceptionné(s) dans REFLEX`)
+  console.log(`Retours en retard : ${lateDemandes} demande(s) créée(s), ${lateInReflex} déjà réceptionné(s) dans REFLEX (défaillance créée)`)
 }
-const okMsg = `${out.filter(o => o.reflex_reception).length}/${todo.length} n° de réception ; ${vOut.filter(v => v.status === 'receptionne').length}/${verif.length} réceptions vérifiées${demandes ? `, ${demandes} demande(s) créée(s)` : ''}${lateDemandes || lateInReflex ? `, retards : ${lateDemandes} demande(s), ${lateInReflex} déjà dans REFLEX` : ''}`
+const okMsg = `${out.filter(o => o.reflex_reception).length}/${todo.length} n° de réception ; ${vOut.filter(v => v.status === 'receptionne').length}/${verif.length} réceptions vérifiées${demandes ? `, ${demandes} demande(s) créée(s)` : ''}${lateDemandes || lateInReflex ? `, retards : ${lateDemandes} demande(s), ${lateInReflex} défaillance(s)` : ''}`
 console.log('OK : ' + okMsg)
 await report(true, okMsg)
