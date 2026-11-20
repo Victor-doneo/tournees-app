@@ -45,7 +45,12 @@ const page = await (await browser.newContext({ locale: 'fr-FR', timezoneId: 'Eur
 const tasks = new Map()
 const prevDays = [] // { d, nd: Set des colis encore non livrés ce jour-là, n }
 let firstReq = null
-page.on('request', r => { if (!firstReq && r.url().includes('backend.urbantz.com/task?')) firstReq = { url: r.url(), headers: r.headers() } })
+const apiCalls = new Map() // diagnostic : appels réseau (xhr/fetch) de la page Urbantz
+page.on('request', r => {
+  if (!firstReq && r.url().includes('backend.urbantz.com/task?')) firstReq = { url: r.url(), headers: r.headers() }
+  if (['xhr', 'fetch'].includes(r.resourceType())) { const u = new URL(r.url()); const k = `${r.method()} ${u.host}${u.pathname}${u.search ? '?' + [...u.searchParams.keys()].join('&') : ''}`; apiCalls.set(k, (apiCalls.get(k) || 0) + 1) }
+})
+page.on('response', r => { const u = r.url(); if (/urbantz\.com/.test(u) && ['xhr', 'fetch'].includes(r.request().resourceType()) && r.status() >= 400) { const k = `STATUT ${r.status()} ${new URL(u).host}${new URL(u).pathname}`; apiCalls.set(k, (apiCalls.get(k) || 0) + 1) } })
 let lastBatch = 0
 const taskStatuses = [] // codes HTTP des appels /task (401/403 = connexion refusée)
 const pageSnippet = async () => `URL ${page.url()} | texte : ${((await page.locator('body').innerText().catch(() => '')) || '').replace(/\s+/g, ' ').slice(0, 250)}`
@@ -73,7 +78,7 @@ try {
     await page.goto(url(0), { waitUntil: 'domcontentloaded' })
   }
   for (let i = 0; i < 20 && !tasks.size; i++) await page.waitForTimeout(1500)
-  if (!tasks.size) { console.log(`Aucune tâche Urbantz pour ${day} (jour férié ? connexion refusée ?) | codes HTTP des appels /task : ${JSON.stringify(taskStatuses)} | ${await pageSnippet()}`); await page.screenshot({ path: 'urbantz-erreur.png', fullPage: true }).catch(() => {}); if (FORCE || DATE) throw new Error('Aucune tâche lue') }
+  if (!tasks.size) { console.log(`Aucune tâche Urbantz pour ${day} (jour férié ? connexion refusée ?) | codes HTTP des appels /task : ${JSON.stringify(taskStatuses)} | appels réseau de la page : ${JSON.stringify([...apiCalls].slice(0, 25))} | ${await pageSnippet()}`); await page.screenshot({ path: 'urbantz-erreur.png', fullPage: true }).catch(() => {}); if (FORCE || DATE) throw new Error('Aucune tâche lue') }
   // pages suivantes (100 tâches par page) : appels directs à l'API avec les mêmes en-têtes que la page
   console.log(`page 0 : ${lastBatch} tâches`)
   if (lastBatch >= 100 && firstReq) {
