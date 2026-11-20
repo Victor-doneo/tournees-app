@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     if (day < FROM_DATE) return json({ day, anomalies: 0, sent: 0, note: `Avant le ${FROM_DATE}` })
 
     // Colis à retourner depuis FROM_DATE et tournées concernées
-    const { data: labels } = await admin.from('return_labels').select('task_date, tour_code, barcode, customer_name, reason, received_at').gte('task_date', FROM_DATE).lte('task_date', day).limit(5000)
+    const { data: labels } = await admin.from('return_labels').select('task_date, tour_code, barcode, customer_name, reason, received_at').gte('task_date', FROM_DATE).lte('task_date', day).or('reflex_recv_status.is.null,reflex_recv_status.neq.livre').limit(5000)
     const { data: tours } = await admin.from('tours').select('id, name, heure_retour, heure_premiere_livraison, tours_references(name), delivery_dates!inner(delivery_date)')
       .gte('delivery_dates.delivery_date', FROM_DATE).lte('delivery_dates.delivery_date', day).limit(5000)
     const byTour: Record<string, any[]> = {}

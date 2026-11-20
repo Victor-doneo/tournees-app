@@ -36,7 +36,7 @@ export default function SuiviTournees({ readOnly = false }) {
       if (error) ({ data } = await q(cols)) // migration Urbantz non lancée
       tl = data || []
     }
-    const { data: lab } = await supabase.from('return_labels').select('*').eq('task_date', day).order('customer_name')
+    const { data: lab } = await supabase.from('return_labels').select('*').eq('task_date', day).or('reflex_recv_status.is.null,reflex_recv_status.neq.livre').order('customer_name')
     const { data: jr } = await supabase.from('job_runs').select('*') // table absente (migration non lancée) : ignoré
     setJobs(jr || [])
     setTours(tl); setLabels(lab || []); setSel(new Set()); setLoading(false)
@@ -75,7 +75,7 @@ export default function SuiviTournees({ readOnly = false }) {
   async function loadAnomalies() {
     const from = ANOMALY_FROM // seules les tournées à partir du 16/11/2026 sont contrôlées (évite de remonter l'historique)
     const to = [todayStr(), day].sort()[1]
-    const { data: ls } = await supabase.from('return_labels').select('task_date, tour_code, barcode, customer_name, received_at').gte('task_date', from).lte('task_date', to).limit(5000)
+    const { data: ls } = await supabase.from('return_labels').select('task_date, tour_code, barcode, customer_name, received_at').gte('task_date', from).lte('task_date', to).or('reflex_recv_status.is.null,reflex_recv_status.neq.livre').limit(5000)
     const withMissing = new Set((ls || []).filter(l => !l.received_at).map(l => `${l.task_date}|${l.tour_code}`))
     if (!withMissing.size) return setAnomalies([])
     const { data: ts } = await supabase.from('tours').select('id, name, heure_retour, tours_references(name), delivery_dates!inner(delivery_date)')

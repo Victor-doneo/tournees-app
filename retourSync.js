@@ -3,7 +3,7 @@ import { supabase } from './supabase'
 // Une tournée est « revenue » quand TOUS ses colis à retourner (table return_labels) ont reçu l'accusé de réception.
 // Marque alors la tournée comme rentrée (heure de retour = dernière réception). Renvoie les ids de tournées mises à jour.
 export async function syncTourReturns(day, onlyCodes = null) {
-  const { data: labels } = await supabase.from('return_labels').select('tour_code, received_at').eq('task_date', day).not('tour_code', 'is', null)
+  const { data: labels } = await supabase.from('return_labels').select('tour_code, received_at').eq('task_date', day).or('reflex_recv_status.is.null,reflex_recv_status.neq.livre').not('tour_code', 'is', null)
   const byCode = {}
   for (const l of labels || []) (byCode[l.tour_code] = byCode[l.tour_code] || []).push(l)
   const done = Object.entries(byCode).filter(([c, ls]) => (!onlyCodes || onlyCodes.includes(c)) && ls.every(l => l.received_at))

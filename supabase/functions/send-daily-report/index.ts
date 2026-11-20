@@ -71,6 +71,7 @@ Deno.serve(async (req) => {
         .from('return_labels')
         .select('tour_code')
         .eq('task_date', today)
+        .or('reflex_recv_status.is.null,reflex_recv_status.neq.livre')
       if (!labelsErr) {
         const withParcels = new Set((expectedLabels || []).map(l => l.tour_code))
         toursRetour = toursRetour.filter(t => withParcels.has(t.tours_references?.name || t.name))

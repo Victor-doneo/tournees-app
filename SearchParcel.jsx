@@ -160,6 +160,7 @@ export default function SearchParcel() {
                   <code style={{ fontFamily: 'monospace', fontWeight: 700, background: 'var(--gray-200)', padding: '3px 10px', borderRadius: 6 }}>{l.barcode}</code>
                   <span style={{ fontSize: 13 }}>{l.customer_name} · {l.reason} · tournée {l.tour_code || '—'} · {new Date(l.task_date + 'T12:00:00').toLocaleDateString('fr-FR')}</span>
                   {l.reflex_reception && <span className="badge badge-gray">REFLEX {l.reflex_reception}</span>}
+                  {l.reflex_recv_status === 'livre' && <span className="badge badge-green" title="Colis livré au 2e passage : ne revient pas">Livré (Urbantz)</span>}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
                   <div style={{ padding: '12px 16px', borderRight: '1px solid var(--gray-100)' }}>
