@@ -47,9 +47,12 @@ const prevDays = [] // { d, nd: Set des colis encore non livrés ce jour-là, n 
 let firstReq = null
 page.on('request', r => { if (!firstReq && r.url().includes('backend.urbantz.com/task?')) firstReq = { url: r.url(), headers: r.headers() } })
 let lastBatch = 0
+const taskStatuses = [] // codes HTTP des appels /task (401/403 = connexion refusée)
+const pageSnippet = async () => `URL ${page.url()} | texte : ${((await page.locator('body').innerText().catch(() => '')) || '').replace(/\s+/g, ' ').slice(0, 250)}`
 page.on('response', async r => {
   const u = r.url()
   if (u.includes('backend.urbantz.com/task?')) {
+    taskStatuses.push(r.status())
     try { const j = await r.json(); if (Array.isArray(j)) { lastBatch = j.length; for (const t of j) tasks.set(t._id || t.id, t) } } catch {}
   }
 })
@@ -66,10 +69,11 @@ try {
     await page.locator('input[type="password"]').first().fill(URBANTZ_PASSWORD)
     await page.keyboard.press('Enter')
     await page.waitForTimeout(6000)
+    console.log('Après la saisie des identifiants :', await pageSnippet())
     await page.goto(url(0), { waitUntil: 'domcontentloaded' })
   }
   for (let i = 0; i < 20 && !tasks.size; i++) await page.waitForTimeout(1500)
-  if (!tasks.size) { console.log(`Aucune tâche Urbantz pour ${day} (jour férié ? connexion refusée ?)`); if (FORCE || DATE) throw new Error('Aucune tâche lue') }
+  if (!tasks.size) { console.log(`Aucune tâche Urbantz pour ${day} (jour férié ? connexion refusée ?) | codes HTTP des appels /task : ${JSON.stringify(taskStatuses)} | ${await pageSnippet()}`); await page.screenshot({ path: 'urbantz-erreur.png', fullPage: true }).catch(() => {}); if (FORCE || DATE) throw new Error('Aucune tâche lue') }
   // pages suivantes (100 tâches par page) : appels directs à l'API avec les mêmes en-têtes que la page
   console.log(`page 0 : ${lastBatch} tâches`)
   if (lastBatch >= 100 && firstReq) {
