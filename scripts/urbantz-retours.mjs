@@ -138,5 +138,14 @@ if (tasks.size && delivered.size) {
   if (del.length) { const { error: de } = await sb.from('return_labels').delete().in('id', del); if (de) throw de }
   console.log(`${del.length} étiquette(s) supprimée(s) (colis livrés au 2e passage)${stale.length - del.length ? `, ${stale.length - del.length} déjà réceptionnée(s) conservée(s)` : ''}`)
 }
+// 2e passage un AUTRE jour : colis en « Livraison impossible » un jour précédent (14 derniers jours), livré aujourd'hui -> l'étiquette du jour précédent n'a plus lieu d'être
+if (tasks.size && delivered.size) {
+  const from = new Date(new Date(`${day}T12:00:00Z`).getTime() - 14 * 864e5).toISOString().slice(0, 10)
+  const { data: prev } = await sb.from('return_labels').select('id, barcode, task_date')
+    .eq('reason', 'Livraison impossible').is('received_at', null).lt('task_date', day).gte('task_date', from)
+  const gone = (prev || []).filter(r => delivered.has(String(r.barcode).trim()))
+  if (gone.length) { const { error: ge } = await sb.from('return_labels').delete().in('id', gone.map(r => r.id)); if (ge) throw ge }
+  console.log(`${gone.length} étiquette(s) d'un jour précédent supprimée(s) (colis livrés aujourd'hui au 2e passage)${gone.length ? ' : ' + gone.map(r => `${r.barcode} (du ${r.task_date})`).join(', ') : ''}`)
+}
 console.log('OK')
 await report(true, `${rows.size} colis à retourner pour le ${day}`)
