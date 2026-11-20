@@ -43,6 +43,7 @@ const matchCode = name => {
 const browser = await chromium.launch()
 const page = await (await browser.newContext({ locale: 'fr-FR', timezoneId: 'Europe/Paris' })).newPage()
 const tasks = new Map()
+const prevDays = [] // { d, nd: Set des colis encore non livrés ce jour-là, n }
 let firstReq = null
 page.on('request', r => { if (!firstReq && r.url().includes('backend.urbantz.com/task?')) firstReq = { url: r.url(), headers: r.headers() } })
 let lastBatch = 0
@@ -52,7 +53,8 @@ page.on('response', async r => {
     try { const j = await r.json(); if (Array.isArray(j)) { lastBatch = j.length; for (const t of j) tasks.set(t._id || t.id, t) } } catch {}
   }
 })
-const url = n => `https://web.urbantz.com/platform/c-chez-vous/tasks?mode=tasks&from=${day}&to=${day}&page=${n}&discarded=false&dateStyle=single&sort=when:up`
+const urlFor = (d, n) => `https://web.urbantz.com/platform/c-chez-vous/tasks?mode=tasks&from=${d}&to=${d}&page=${n}&discarded=false&dateStyle=single&sort=when:up`
+const url = n => urlFor(day, n)
 try {
   await page.goto(url(0), { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(4000)
@@ -81,6 +83,40 @@ try {
       for (const t of j) tasks.set(t._id || t.id, t)
       if (j.length < 100) break
     }
+  }
+  // Jours précédents dont des colis « Livraison impossible » ne sont pas encore soldés : on relit la liste du jour.
+  // Un BP qui n'y figure plus parmi les colis non livrés a été livré (2e passage) -> il sort de la tournée.
+  if (!DATE) {
+    const mainTasks = new Map(tasks)
+    const fromD = [ '2026-11-16', new Date(new Date(`${day}T12:00:00Z`).getTime() - 14 * 864e5).toISOString().slice(0, 10) ].sort().pop()
+    const { data: pd } = await sb.from('return_labels').select('task_date').eq('reason', 'Livraison impossible').lt('task_date', day).gte('task_date', fromD)
+      .or('received_at.is.null,reflex_recv_status.is.null,reflex_recv_status.not.in.(receptionne,livre)')
+    const prevList = [...new Set((pd || []).map(r => r.task_date))].sort().slice(-7)
+    for (const d of prevList) {
+      try {
+        tasks.clear(); firstReq = null; lastBatch = 0
+        await page.goto(urlFor(d, 0), { waitUntil: 'domcontentloaded' })
+        for (let i = 0; i < 20 && !tasks.size; i++) await page.waitForTimeout(1500)
+        if (!tasks.size) { console.log(`Jour précédent ${d} : aucune tâche lue, ignoré`); continue }
+        if (lastBatch >= 100 && firstReq) {
+          const headers = Object.fromEntries(Object.entries(firstReq.headers).filter(([k]) => !/^(host|content-length|connection|accept-encoding)$/i.test(k) && !k.startsWith(':')))
+          for (let n = 1; n < 30; n++) {
+            const u = new URL(firstReq.url); u.searchParams.set('page', String(n))
+            const resp = await page.context().request.get(u.toString(), { headers })
+            const j = resp.ok() ? await resp.json().catch(() => []) : []
+            if (!Array.isArray(j) || !j.length) break
+            for (const t of j) tasks.set(t._id || t.id, t)
+            if (j.length < 100) break
+          }
+        }
+        const dl = new Set(), nd = new Set()
+        for (const t of tasks.values()) for (const it of t.items || []) if (it.barcode && it.status === 'DELIVERED') dl.add(String(it.barcode).trim())
+        for (const t of tasks.values()) for (const it of t.items || []) if (it.barcode && it.status === 'NOT_DELIVERED' && !dl.has(String(it.barcode).trim())) nd.add(String(it.barcode).trim())
+        prevDays.push({ d, nd, n: tasks.size })
+        console.log(`Jour précédent ${d} : ${tasks.size} tâches, ${nd.size} colis encore non livrés`)
+      } catch (e) { console.log(`Jour précédent ${d} : erreur ${e.message}`) }
+    }
+    tasks.clear(); for (const [k, v] of mainTasks) tasks.set(k, v)
   }
 } catch (e) {
   await page.screenshot({ path: 'urbantz-erreur.png', fullPage: true }).catch(() => {})
@@ -134,7 +170,23 @@ if (process.env.BP) {
 console.log(`${tasks.size} tâches, statuts items :`, JSON.stringify(stat))
 console.log(`dont ${lcrCount} livraison(s) contre reprise livrée(s) ajoutée(s) en collecté`)
 console.log(`${rows.size} colis à retourner pour le ${day} (${recovered} livraison(s) ratée(s) finalement livrée(s) au 2e passage, ignorée(s))`)
-if (DRY_RUN) { console.log('DRY_RUN : rien écrit.'); process.exit(0) }
+// Rapprochement : un BP « Livraison impossible » qui n'apparaît plus parmi les colis non livrés du jour est un colis livré (2e passage)
+//  -> étiquette supprimée ; si elle était déjà accusée de réception, conservée et marquée « livre » (plus de contrôle REFLEX ni de retour attendu)
+const resolveLabels = async (d, notDelivered) => {
+  const { data: labs } = await sb.from('return_labels').select('id, barcode, received_at, reflex_recv_status').eq('task_date', d).eq('reason', 'Livraison impossible')
+  const gone = (labs || []).filter(r => !notDelivered.has(String(r.barcode).trim()))
+  const del = gone.filter(r => !r.received_at).map(r => r.id)
+  const keep = gone.filter(r => r.received_at && r.reflex_recv_status !== 'receptionne' && r.reflex_recv_status !== 'livre').map(r => r.id)
+  if (DRY_RUN) { console.log(`${d} (simulation) : ${del.length} étiquette(s) seraient supprimée(s)${del.length ? ' : ' + gone.filter(r => !r.received_at).map(r => r.barcode).join(', ') : ''} ; ${keep.length} accusée(s) seraient marquée(s) « livré »${keep.length ? ' : ' + gone.filter(r => keep.includes(r.id)).map(r => r.barcode).join(', ') : ''}`); return }
+  if (del.length) { const { error: de } = await sb.from('return_labels').delete().in('id', del); if (de) throw de }
+  if (keep.length) { const { error: ke } = await sb.from('return_labels').update({ reflex_recv_status: 'livre', reflex_recv_checked_at: new Date().toISOString(), reflex_recv_line: 'Livré (Urbantz)' }).in('id', keep); if (ke) throw ke }
+  console.log(`${d} : ${del.length} étiquette(s) supprimée(s), ${keep.length} accusée(s) marquée(s) « livré » (colis qui n'apparaissent plus parmi les non livrés)`)
+}
+if (DRY_RUN) {
+  if (tasks.size) await resolveLabels(day, new Set([...rows.values()].filter(r => r.reason === 'Livraison impossible').map(r => r.barcode)))
+  for (const x of prevDays) await resolveLabels(x.d, x.nd)
+  console.log('DRY_RUN : rien écrit.'); process.exit(0)
+}
 if (rows.size) {
   const { error } = await sb.from('return_labels').upsert([...rows.values()], { onConflict: 'task_date,barcode' })
   if (error) throw error
@@ -144,25 +196,7 @@ if (rows.size) {
     await sb.from('return_labels').update({ reflex_reception: rec }).eq('task_date', day).eq('barcode', '7' + bc).is('reflex_reception', null)
   }
 }
-// Mise à jour : les étiquettes « Livraison impossible » créées plus tôt dans la journée pour un colis finalement livré sont supprimées (sauf si déjà réceptionnées)
-if (tasks.size && delivered.size) {
-  const { data: old } = await sb.from('return_labels').select('id, barcode, received_at, reflex_recv_status').eq('task_date', day).eq('reason', 'Livraison impossible')
-  const stale = (old || []).filter(r => delivered.has(String(r.barcode).trim()) && !rows.has(`${day}|${r.barcode}`))
-  const del = stale.filter(r => !r.received_at).map(r => r.id)
-  if (del.length) { const { error: de } = await sb.from('return_labels').delete().in('id', del); if (de) throw de }
-  // Étiquette déjà accusée de réception mais colis finalement livré : on la conserve, marquée « livre » -> plus de contrôle REFLEX ni de demande « Réception REFLEX »
-  const kept = stale.filter(r => r.received_at && r.reflex_recv_status !== 'receptionne' && r.reflex_recv_status !== 'livre').map(r => r.id)
-  if (kept.length) { const { error: ke } = await sb.from('return_labels').update({ reflex_recv_status: 'livre', reflex_recv_checked_at: new Date().toISOString(), reflex_recv_line: 'Livré (Urbantz)' }).in('id', kept); if (ke) throw ke }
-  console.log(`${del.length} étiquette(s) supprimée(s) (colis livrés au 2e passage)${stale.length - del.length ? `, ${stale.length - del.length} déjà réceptionnée(s) conservée(s)${kept.length ? ` dont ${kept.length} marquée(s) « livré » (pas de contrôle REFLEX)` : ''}` : ''}`)
-}
-// 2e passage un AUTRE jour : colis en « Livraison impossible » un jour précédent (14 derniers jours), livré aujourd'hui -> l'étiquette du jour précédent n'a plus lieu d'être
-if (tasks.size && delivered.size) {
-  const from = new Date(new Date(`${day}T12:00:00Z`).getTime() - 14 * 864e5).toISOString().slice(0, 10)
-  const { data: prev } = await sb.from('return_labels').select('id, barcode, task_date')
-    .eq('reason', 'Livraison impossible').is('received_at', null).lt('task_date', day).gte('task_date', from)
-  const gone = (prev || []).filter(r => delivered.has(String(r.barcode).trim()))
-  if (gone.length) { const { error: ge } = await sb.from('return_labels').delete().in('id', gone.map(r => r.id)); if (ge) throw ge }
-  console.log(`${gone.length} étiquette(s) d'un jour précédent supprimée(s) (colis livrés aujourd'hui au 2e passage)${gone.length ? ' : ' + gone.map(r => `${r.barcode} (du ${r.task_date})`).join(', ') : ''}`)
-}
+if (tasks.size) await resolveLabels(day, new Set([...rows.values()].filter(r => r.reason === 'Livraison impossible').map(r => r.barcode)))
+for (const x of prevDays) await resolveLabels(x.d, x.nd)
 console.log('OK')
 await report(true, `${rows.size} colis à retourner pour le ${day}`)
