@@ -57,6 +57,15 @@ const lateGroups = new Map()
     lateGroups.get(bp).push(l)
   }
 }
+// Garde : on ne crée demandes/défaillances « retard » que si la réconciliation Urbantz (colis livrés retirés) a réussi AUJOURD'HUI
+if (lateGroups.size) {
+  const parisDay = iso => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date(iso))
+  const { data: ju } = await sb.from('job_runs').select('last_run, ok').eq('job', 'urbantz_retours').maybeSingle()
+  if (!ju || !ju.ok || parisDay(ju.last_run) !== parisDay(new Date().toISOString())) {
+    console.log(`Retours en retard : ${lateGroups.size} BP ignorés pour l'instant, la lecture Urbantz du jour n'a pas (encore) réussi (dernier passage : ${ju ? ju.last_run + (ju.ok ? '' : ' en erreur') : 'aucun'})`)
+    lateGroups.clear()
+  }
+}
 console.log(`${lateGroups.size} BP en retard de retour (> ${OVERDUE_DAYS} jours) à contrôler dans REFLEX`)
 const lateCheck = [] // { bp, labels, found, date, error }
 

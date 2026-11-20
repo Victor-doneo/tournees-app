@@ -82,7 +82,11 @@ Deno.serve(async (req) => {
     if (incomplete.length) sections.push(`<h3>Tournées rentrées aujourd'hui avec des colis non réceptionnés (${incomplete.length})</h3>${table(['Tournée', 'Retour', 'Réception', 'Colis non réceptionnés'], incomplete.map((a) => `<tr><td style="${TD}"><b>${esc(a.code)}</b><br>du ${fr(a.dt)}</td><td style="${TD}">rentrée à ${hhmm(a.retour!)}</td><td style="${TD}">${a.ls.length - a.missing.length}/${a.ls.length} colis</td><td style="${TD}">${colis(a)}</td></tr>`))}`)
     if (overdue.length) sections.push(`<h3>Colis non réceptionnés depuis plus de ${OVERDUE_DAYS} jours (${overdue.length} tournée(s))</h3>${table(['Tournée', 'Colis non réceptionnés'], overdue.map((a) => `<tr><td style="${TD}"><b>${esc(a.code)}</b><br>du ${fr(a.dt)}</td><td style="${TD}">${colis(a)}</td></tr>`))}`)
 
-    const html = `<div style="font-family:Calibri,Arial,sans-serif;font-size:11pt"><p>Bonjour,</p><p>Anomalies de retour des tournées au ${fr(day)} :</p>${sections.join('')}<p>Cordialement,<br>Superflash</p></div>`
+    // Contrôle de fraîcheur : la lecture Urbantz (colis livrés retirés des retours) doit avoir réussi aujourd'hui
+    const { data: ju } = await admin.from('job_runs').select('last_run, ok').eq('job', 'urbantz_retours').maybeSingle()
+    const urbantzOk = !!ju?.ok && parisDay(ju.last_run) === today
+    const warn = urbantzOk ? '' : `<p style="color:#b45309"><b>⚠ Attention :</b> la lecture Urbantz du jour n'a pas abouti${ju ? ` (dernier passage : ${fr(parisDay(ju.last_run))} ${hhmm(ju.last_run)}${ju.ok ? '' : ', en erreur'})` : ''} : des colis déjà livrés peuvent encore figurer dans cette liste.</p>`
+    const html = `<div style="font-family:Calibri,Arial,sans-serif;font-size:11pt"><p>Bonjour,</p><p>Anomalies de retour des tournées au ${fr(day)} :</p>${warn}${sections.join('')}<p>Cordialement,<br>Superflash</p></div>`
     const subject = `ANOMALIES RETOUR TOURNÉES / CCV / ${fr(day)} (${total})`
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
