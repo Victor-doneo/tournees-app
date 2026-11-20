@@ -225,7 +225,7 @@ export default function SuiviTournees({ readOnly = false }) {
 
             {anomalies.length > 0 && (
               <div style={{ background: '#fff5f5', borderRadius: 'var(--radius)', border: '1px solid var(--red)', padding: '14px 16px' }}>
-                <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={16} /> {anomalies.length} tournée(s) rentrée(s) avec des colis non réceptionnés (depuis le 16/11)</div>
+                <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={16} /> {anomalies.length} tournée(s) rentrée(s) avec des colis non réceptionnés</div>
                 {anomalies.map(a => (
                   <div key={a.t.id} style={{ fontSize: 13, marginTop: 6 }}>
                     <b>{refOf(a.t)}</b> — {new Date(a.dt + 'T12:00:00').toLocaleDateString('fr-FR')} — rentrée à {hhmm(a.t.heure_retour)} — {a.ls.length - a.missing.length}/{a.ls.length} colis réceptionnés
