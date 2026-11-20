@@ -49,7 +49,7 @@ const browser = await chromium.launch()
 const page = await (await browser.newContext({ locale: 'fr-FR', timezoneId: 'Europe/Paris' })).newPage()
 const missions = []
 page.on('response', async r => {
-  if (r.url().includes('backend.urbantz.com/mission?') && r.url().includes(`date=${day}`)) {
+  if (/(backend\.urbantz\.com|web\.urbantz\.com\/api)\/missions?(\?|\/?$)/.test(r.url()) && r.url().includes(`date=${day}`)) {
     try { const j = await r.json(); if (Array.isArray(j)) missions.push(...j) } catch {}
   }
 })
