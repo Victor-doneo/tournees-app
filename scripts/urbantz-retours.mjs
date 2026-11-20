@@ -89,9 +89,11 @@ try {
   if (!DATE) {
     const mainTasks = new Map(tasks)
     const fromD = [ '2026-11-16', new Date(new Date(`${day}T12:00:00Z`).getTime() - 14 * 864e5).toISOString().slice(0, 10) ].sort().pop()
-    const { data: pd } = await sb.from('return_labels').select('task_date').eq('reason', 'Livraison impossible').lt('task_date', day).gte('task_date', fromD)
+    const { data: pd, error: pde } = await sb.from('return_labels').select('task_date').eq('reason', 'Livraison impossible').lt('task_date', day).gte('task_date', fromD)
       .or('received_at.is.null,reflex_recv_status.is.null,reflex_recv_status.not.in.(receptionne,livre)')
+    if (pde) console.log('Jours précédents : requête en erreur :', pde.message)
     const prevList = [...new Set((pd || []).map(r => r.task_date))].sort().slice(-7)
+    console.log(`Jours précédents à relire (depuis ${fromD}) : ${prevList.length ? prevList.join(', ') : 'aucun'}`)
     for (const d of prevList) {
       try {
         tasks.clear(); firstReq = null; lastBatch = 0
