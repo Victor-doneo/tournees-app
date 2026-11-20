@@ -49,7 +49,7 @@ const lateGroups = new Map()
   const limit = addDays(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date()), -OVERDUE_DAYS)
   const { data: late, error: le } = await sb.from('return_labels').select('id, barcode, reason, tour_code, task_date')
     .is('received_at', null).is('overdue_demande_id', null).gte('task_date', OVERDUE_FROM).lte('task_date', limit)
-    .or('reflex_recv_status.is.null,reflex_recv_status.neq.receptionne').limit(500)
+    .or('reflex_recv_status.is.null,reflex_recv_status.not.in.(receptionne,livre)').limit(500)
   if (le) console.log('Demandes de retard ignorées (migration supabase_migration_reflex_verification.sql lancée ?) :', le.message)
   else for (const l of late || []) {
     const bp = /contre reprise/i.test(l.reason || '') ? String(l.barcode).replace(/^7/, '').trim() : String(l.barcode).trim()
@@ -72,7 +72,7 @@ const verifGroups = new Map()
 {
   const { data, error } = await sb.from('return_labels')
     .select('id, barcode, reason, tour_code, task_date, received_at, reflex_recv_status, reflex_recv_checked_at, reflex_demande_id')
-    .not('received_at', 'is', null).gte('task_date', VERIF_FROM).or('reflex_recv_status.is.null,reflex_recv_status.neq.receptionne').order('reflex_recv_checked_at', { ascending: true, nullsFirst: true }).limit(500)
+    .not('received_at', 'is', null).gte('task_date', VERIF_FROM).or('reflex_recv_status.is.null,reflex_recv_status.not.in.(receptionne,livre)').order('reflex_recv_checked_at', { ascending: true, nullsFirst: true }).limit(500)
   if (error) console.log('Vérification des réceptions ignorée (migration supabase_migration_reflex_verification.sql lancée ?) :', error.message)
   else for (const r of data || []) {
     // Tout BP pas encore « réceptionné » dans REFLEX est revérifié à chaque passage (il a pu être réceptionné depuis) ;

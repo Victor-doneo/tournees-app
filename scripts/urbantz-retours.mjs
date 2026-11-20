@@ -146,11 +146,14 @@ if (rows.size) {
 }
 // Mise à jour : les étiquettes « Livraison impossible » créées plus tôt dans la journée pour un colis finalement livré sont supprimées (sauf si déjà réceptionnées)
 if (tasks.size && delivered.size) {
-  const { data: old } = await sb.from('return_labels').select('id, barcode, received_at').eq('task_date', day).eq('reason', 'Livraison impossible')
+  const { data: old } = await sb.from('return_labels').select('id, barcode, received_at, reflex_recv_status').eq('task_date', day).eq('reason', 'Livraison impossible')
   const stale = (old || []).filter(r => delivered.has(String(r.barcode).trim()) && !rows.has(`${day}|${r.barcode}`))
   const del = stale.filter(r => !r.received_at).map(r => r.id)
   if (del.length) { const { error: de } = await sb.from('return_labels').delete().in('id', del); if (de) throw de }
-  console.log(`${del.length} étiquette(s) supprimée(s) (colis livrés au 2e passage)${stale.length - del.length ? `, ${stale.length - del.length} déjà réceptionnée(s) conservée(s)` : ''}`)
+  // Étiquette déjà accusée de réception mais colis finalement livré : on la conserve, marquée « livre » -> plus de contrôle REFLEX ni de demande « Réception REFLEX »
+  const kept = stale.filter(r => r.received_at && r.reflex_recv_status !== 'receptionne' && r.reflex_recv_status !== 'livre').map(r => r.id)
+  if (kept.length) { const { error: ke } = await sb.from('return_labels').update({ reflex_recv_status: 'livre', reflex_recv_checked_at: new Date().toISOString(), reflex_recv_line: 'Livré (Urbantz)' }).in('id', kept); if (ke) throw ke }
+  console.log(`${del.length} étiquette(s) supprimée(s) (colis livrés au 2e passage)${stale.length - del.length ? `, ${stale.length - del.length} déjà réceptionnée(s) conservée(s)${kept.length ? ` dont ${kept.length} marquée(s) « livré » (pas de contrôle REFLEX)` : ''}` : ''}`)
 }
 // 2e passage un AUTRE jour : colis en « Livraison impossible » un jour précédent (14 derniers jours), livré aujourd'hui -> l'étiquette du jour précédent n'a plus lieu d'être
 if (tasks.size && delivered.size) {
