@@ -117,6 +117,20 @@ for (const t of tasks.values()) {
     })
   }
 }
+// Diagnostic : BP=<n° de colis> affiche toutes les tâches et items Urbantz qui contiennent ce numéro
+if (process.env.BP) {
+  const bp = String(process.env.BP).trim()
+  let n = 0
+  for (const t of tasks.values()) {
+    if (!JSON.stringify(t).includes(bp)) continue
+    n++
+    console.log(`DIAG tâche ${t.taskId || t.id} | tournée ${t.roundName || '—'} | statut tâche ${t.status || t.state || '—'} | client ${t.contact?.person || '—'}`)
+    for (const it of t.items || []) if (JSON.stringify(it).includes(bp)) console.log(`   item barcode=${it.barcode} statut=${it.status} nom=${it.name || ''} | déjà dans « livrés » : ${delivered.has(String(it.barcode).trim())} | retenu à retourner : ${rows.has(`${day}|${String(it.barcode).trim()}`)}`)
+  }
+  console.log(`DIAG ${bp} : ${n} tâche(s) le ${day}`)
+  const { data: lab } = await sb.from('return_labels').select('task_date, barcode, reason, tour_code, item_status, received_at, created_at').or(`barcode.eq.${bp},barcode.eq.7${bp}`).order('task_date')
+  console.log('DIAG étiquettes en base :', JSON.stringify(lab))
+}
 console.log(`${tasks.size} tâches, statuts items :`, JSON.stringify(stat))
 console.log(`dont ${lcrCount} livraison(s) contre reprise livrée(s) ajoutée(s) en collecté`)
 console.log(`${rows.size} colis à retourner pour le ${day} (${recovered} livraison(s) ratée(s) finalement livrée(s) au 2e passage, ignorée(s))`)
