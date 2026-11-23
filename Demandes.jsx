@@ -452,7 +452,7 @@ function CreateDemandeModal({ onClose, onCreated }) {
             <div className="form-group">
               <label className="form-label">Affecter à</label>
               <select className="form-input" value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
-                <option value="doneo">DONEO (interne)</option>
+                <option value="doneo">DONEO</option>
                 <option value="partenaire">Partenaire</option>
               </select>
             </div>
@@ -678,7 +678,7 @@ function DemandeDetailModal({ demande, basePath, canValidate, canLinkToSearch, o
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <label className="form-label" style={{ margin: 0 }}>Affectée à</label>
               <select className="form-input" style={{ width: 'auto' }} value={assigned} onChange={e => changeAssign(e.target.value)}>
-                <option value="doneo">DONEO (interne)</option>
+                <option value="doneo">DONEO</option>
                 <option value="partenaire">Partenaire</option>
               </select>
             </div>
