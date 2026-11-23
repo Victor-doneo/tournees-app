@@ -31,6 +31,16 @@ export const STATUS_META = {
   cloturee: { label: 'Clôturée', badge: 'badge-gray' },
 }
 
+// Affectation : DONEO (interne, bleu) ou Partenaire (rose)
+export const ASSIGN_META = {
+  doneo: { label: 'DONEO', bg: '#dbeafe', color: '#1e40af' },
+  partenaire: { label: 'Partenaire', bg: '#fce7f3', color: '#9d174d' },
+}
+export function AssignBadge({ value }) {
+  const m = ASSIGN_META[value] || ASSIGN_META.doneo
+  return <span className="badge" style={{ background: m.bg, color: m.color }}>{m.label}</span>
+}
+
 export default function Demandes() {
   const { profile } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -226,6 +236,7 @@ export default function Demandes() {
                     <th>BP</th>
                     <th>Commentaire</th>
                     <th>Statut</th>
+                    <th>Affectée à</th>
                     <th>Créée par</th>
                     <th>Date</th>
                     <th title="Jours écoulés depuis l'émission, week-ends exclus">Ancienneté</th>
@@ -289,6 +300,7 @@ export default function Demandes() {
                             {(STATUS_META[d.status] || STATUS_META.ouverte).label}
                           </span>
                         </td>
+                        <td><AssignBadge value={d.assigned_to} /></td>
                         <td style={{ fontSize: '13px' }}>{d.created_by_user?.full_name || d.created_by_user?.email || '—'}</td>
                         <td style={{ fontSize: '13px', color: 'var(--gray-500)' }}>
                           {new Date(d.created_at).toLocaleString('fr-FR')}
@@ -336,6 +348,7 @@ function CreateDemandeModal({ onClose, onCreated }) {
   const [bpList, setBpList] = useState([])
   const [commentaire, setCommentaire] = useState('')
   const [photos, setPhotos] = useState([]) // [{ file, preview }]
+  const [assignedTo, setAssignedTo] = useState('doneo')
   const [saving, setSaving] = useState(false)
 
   const bpRequired = BP_REQUIRED_TYPES.includes(type)
@@ -403,6 +416,7 @@ function CreateDemandeModal({ onClose, onCreated }) {
       commentaire: commentaire.trim() || null,
       photos: photoPaths,
       status: 'ouverte',
+      assigned_to: assignedTo,
       created_by: user.id,
     })
     setSaving(false)
@@ -432,6 +446,14 @@ function CreateDemandeModal({ onClose, onCreated }) {
                 {Object.entries(TYPES).map(([key, t]) => (
                   <option key={key} value={key}>{t.label}</option>
                 ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Affecter à</label>
+              <select className="form-input" value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
+                <option value="doneo">DONEO (interne)</option>
+                <option value="partenaire">Partenaire</option>
               </select>
             </div>
 
@@ -518,6 +540,7 @@ function DemandeDetailModal({ demande, basePath, canValidate, canLinkToSearch, o
   const [sending, setSending] = useState(false)
   const [resolving, setResolving] = useState(false)
   const [status, setStatus] = useState(demande.status)
+  const [assigned, setAssigned] = useState(demande.assigned_to || 'doneo')
   const [photoUrls, setPhotoUrls] = useState([])
   const [replyPhotos, setReplyPhotos] = useState([]) // photos en cours de saisie : [{ file, preview }]
   const [replyPhotoUrls, setReplyPhotoUrls] = useState({}) // chemin -> lien temporaire, pour les réponses déjà envoyées
@@ -621,6 +644,14 @@ function DemandeDetailModal({ demande, basePath, canValidate, canLinkToSearch, o
     onChanged()
   }
 
+  async function changeAssign(v) {
+    const { error } = await supabase.from('demandes').update({ assigned_to: v }).eq('id', demande.id)
+    if (error) return toast.error('Erreur : ' + error.message)
+    setAssigned(v)
+    toast.success(`Demande affectée à ${ASSIGN_META[v].label}`)
+    onChanged()
+  }
+
   const handleValidate = () => setDemandeStatus('resolue', 'Demande marquée comme réalisée')
   const handleCancel = () => setDemandeStatus('annulee', 'Demande annulée')
   const handleClose = () => setDemandeStatus('cloturee', 'Demande clôturée')
@@ -636,12 +667,22 @@ function DemandeDetailModal({ demande, basePath, canValidate, canLinkToSearch, o
               <span className={`badge ${(STATUS_META[status] || STATUS_META.ouverte).badge}`}>
                 {(STATUS_META[status] || STATUS_META.ouverte).label}
               </span>
+              <AssignBadge value={assigned} />
             </div>
             <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={16} /></button>
           </div>
         </div>
 
         <div className="modal-body">
+          {canValidate && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label className="form-label" style={{ margin: 0 }}>Affectée à</label>
+              <select className="form-input" style={{ width: 'auto' }} value={assigned} onChange={e => changeAssign(e.target.value)}>
+                <option value="doneo">DONEO (interne)</option>
+                <option value="partenaire">Partenaire</option>
+              </select>
+            </div>
+          )}
           {demande.bp?.length > 0 && (
             <div>
               <label className="form-label">BP concernés</label>
