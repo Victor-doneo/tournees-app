@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     if (day < FROM_DATE) return json({ day, anomalies: 0, sent: 0, note: `Avant le ${FROM_DATE}` })
 
     // Colis à retourner depuis FROM_DATE et tournées concernées
-    const { data: labels } = await admin.from('return_labels').select('task_date, tour_code, barcode, customer_name, reason, received_at').gte('task_date', FROM_DATE).lte('task_date', day).or('reflex_recv_status.is.null,reflex_recv_status.neq.livre').limit(5000)
+    const { data: labels } = await admin.from('return_labels').select('task_date, tour_code, barcode, customer_name, reason, received_at, reflex_recv_status').gte('task_date', FROM_DATE).lte('task_date', day).or('reflex_recv_status.is.null,reflex_recv_status.neq.livre').limit(5000)
     const { data: tours } = await admin.from('tours').select('id, name, heure_retour, heure_premiere_livraison, tours_references(name), delivery_dates!inner(delivery_date)')
       .gte('delivery_dates.delivery_date', FROM_DATE).lte('delivery_dates.delivery_date', day).limit(5000)
     const byTour: Record<string, any[]> = {}
@@ -66,7 +66,8 @@ Deno.serve(async (req) => {
 
     // 3. Colis non réceptionnés depuis plus de OVERDUE_DAYS jours (tournée du 16/11 ou après)
     const limit = addDays(day, -OVERDUE_DAYS)
-    const overdue = (tours || []).map(info).filter((a) => a.dt <= limit && a.missing.length > 0)
+    // Rubrique 3 : on écarte les colis déjà réceptionnés dans REFLEX (contrôlés par le script REFLEX), même sans accusé dans l'application
+    const overdue = (tours || []).map(info).map((a) => ({ ...a, missing: a.missing.filter((l: any) => l.reflex_recv_status !== 'receptionne') })).filter((a) => a.dt <= limit && a.missing.length > 0)
 
     const total = notBack.length + incomplete.length + overdue.length
     if (!total) return json({ day, anomalies: 0, sent: 0 })
