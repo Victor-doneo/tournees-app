@@ -10,6 +10,7 @@ const hhmm = iso => iso ? new Date(iso).toLocaleTimeString('fr-FR', { timeZone: 
 
 export default function SuiviTournees({ readOnly = false }) {
   const { user } = useAuth()
+  const canUnreceive = !readOnly && (user?.email || '').toLowerCase() === 'maxime@doneo.co' // seul Maxime peut désaccuser une réception
   const [day, setDay] = useState(todayStr())
   const [tours, setTours] = useState([])
   const [labels, setLabels] = useState([])
@@ -120,6 +121,7 @@ export default function SuiviTournees({ readOnly = false }) {
   }
   // Désaccuse la réception : les colis redeviennent « en attente » et la tournée n'est plus marquée rentrée
   async function unreceive(list) {
+    if (!canUnreceive) return toast.error('Action réservée')
     const rows = list.filter(r => r.received_at)
     if (!rows.length) return toast('Aucun accusé de réception à annuler')
     if (!confirm(`Annuler l'accusé de réception de ${rows.length} colis ?`)) return
@@ -173,13 +175,13 @@ export default function SuiviTournees({ readOnly = false }) {
               <td>{r.reflex_reception ? <b>{r.reflex_reception}</b> : (/contre reprise/i.test(r.reason || '') ? (/Aucune ligne LCR|Absence de ligne/i.test(r.reflex_note || '')
                 ? <span style={{ color: 'var(--red)', fontSize: 12, fontWeight: 600 }} title="REFLEX ne contient aucune ligne de réception LCR pour ce BP">Absence de ligne de réception</span>
                 : <span style={{ color: 'var(--gray-400)', fontSize: 12 }} title={r.reflex_note || ''}>{r.reflex_note || 'à venir'}</span>) : '—')}</td>
-              <td>{r.received_at ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span className="badge badge-green">{hhmm(r.received_at)}</span>{!readOnly && <button className="btn btn-ghost btn-sm" title="Annuler l'accusé de réception" style={{ padding: '0 6px', color: 'var(--red)' }} onClick={() => unreceive([r])}>✕</button>}</span> : readOnly ? <span style={{ color: 'var(--gray-400)' }}>En attente</span> : <button className="btn btn-secondary btn-sm" onClick={() => receive([r])}>Accuser réception</button>}</td>
+              <td>{r.received_at ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span className="badge badge-green">{hhmm(r.received_at)}</span>{canUnreceive && <button className="btn btn-ghost btn-sm" title="Annuler l'accusé de réception" style={{ padding: '0 6px', color: 'var(--red)' }} onClick={() => unreceive([r])}>✕</button>}</span> : readOnly ? <span style={{ color: 'var(--gray-400)' }}>En attente</span> : <button className="btn btn-secondary btn-sm" onClick={() => receive([r])}>Accuser réception</button>}</td>
               <td>{r.printed_at ? hhmm(r.printed_at) : '—'}</td>
             </tr>))}</tbody>
         </table>
         {!readOnly && <div style={{ padding: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-secondary btn-sm" onClick={() => receive(list)}><CheckCircle size={14} /> Tout réceptionner</button>
-          {list.some(r => r.received_at) && <button className="btn btn-secondary btn-sm" style={{ color: 'var(--red)' }} onClick={() => unreceive(list)}>Annuler les réceptions</button>}
+          {canUnreceive && list.some(r => r.received_at) && <button className="btn btn-secondary btn-sm" style={{ color: 'var(--red)' }} onClick={() => unreceive(list)}>Annuler les réceptions</button>}
           <button className="btn btn-secondary btn-sm" onClick={() => print(list.filter(r => sel.has(r.id)))}><Printer size={14} /> Imprimer les cochés</button>
         </div>}
       </div>
