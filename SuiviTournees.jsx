@@ -119,6 +119,17 @@ export default function SuiviTournees({ readOnly = false }) {
     if (back.length) toast.success('Tournée revenue ✔')
     fetchAll()
   }
+  // Déconfirme le retour d'une tournée (rentrée -> non rentrée), même si elle n'a aucun colis à retourner
+  async function deconfirmerRetour(tour) {
+    if (!canUnreceive) return toast.error('Action réservée')
+    if (!confirm(`Annuler le retour de "${refOf(tour)}" ? Elle redeviendra « non rentrée ».`)) return
+    setUpdating(tour.id)
+    const { error } = await supabase.from('tours').update({ heure_retour: null, status: 'pending' }).eq('id', tour.id)
+    setUpdating(null)
+    if (error) return toast.error(error.message)
+    toast.success('Retour annulé')
+    fetchAll()
+  }
   // Désaccuse la réception : les colis redeviennent « en attente » et la tournée n'est plus marquée rentrée
   async function unreceive(list) {
     if (!canUnreceive) return toast.error('Action réservée')
@@ -314,6 +325,11 @@ export default function SuiviTournees({ readOnly = false }) {
                         </div>
                       )}
                     </div>
+                    {canUnreceive && t.heure_retour && (
+                      <button className="btn btn-sm" disabled={isUpdating} onClick={() => deconfirmerRetour(t)} style={{ flexShrink: 0, background: '#fef2f2', border: '1px solid #fca5a5', color: 'var(--red)' }}>
+                        <span style={{ fontSize: 12 }}>Annuler le retour</span>
+                      </button>
+                    )}
                     {!readOnly && !t.heure_retour && (
                       <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
                         <button className="btn btn-sm" disabled={isUpdating} onClick={() => toggleRetard(t)}
