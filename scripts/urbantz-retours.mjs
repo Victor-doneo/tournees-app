@@ -211,5 +211,24 @@ if (rows.size) {
 }
 if (tasks.size) await resolveLabels(day, new Set([...rows.values()].filter(r => r.reason === 'Livraison impossible').map(r => r.barcode)))
 for (const x of prevDays) await resolveLabels(x.d, x.nd)
+// Rattrapage : étiquettes sans tournée reconnue (tournée importée dans l'application après leur lecture) -> on retente le rapprochement
+{
+  const { data: orph } = await sb.from('return_labels').select('id, task_date, round_name').is('tour_code', null).not('round_name', 'is', null).gte('task_date', new Date(Date.parse(day + 'T12:00:00Z') - 14 * 864e5).toISOString().slice(0, 10))
+  const byDate = new Map()
+  for (const l of orph || []) { if (!byDate.has(l.task_date)) byDate.set(l.task_date, []); byDate.get(l.task_date).push(l) }
+  let fixed = 0
+  for (const [d, ls] of byDate) {
+    const { data: dd } = await sb.from('delivery_dates').select('id').eq('delivery_date', d).maybeSingle()
+    if (!dd) continue
+    const { data: tt } = await sb.from('tours').select('name, tours_references(name)').eq('delivery_date_id', dd.id)
+    const dayCodes = (tt || []).map(t => t.tours_references?.name || t.name)
+    for (const l of ls) {
+      const n = String(l.round_name || '').toUpperCase().replace(/^TA830CAMION/, '')
+      const c = [...dayCodes].sort((a, b) => b.length - a.length).find(c => { const i = n.indexOf(String(c).toUpperCase()); return i >= 0 && !/\d/.test(n[i + String(c).length] || '') })
+      if (c) { if (!DRY_RUN) await sb.from('return_labels').update({ tour_code: c }).eq('id', l.id); fixed++ }
+    }
+  }
+  if (fixed) console.log(`${fixed} étiquette(s) rattachée(s) à une tournée${DRY_RUN ? ' (simulation)' : ''}`)
+}
 console.log('OK')
 await report(true, `${rows.size} colis à retourner pour le ${day}`)
