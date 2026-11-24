@@ -338,6 +338,7 @@ export default function UploadPDF() {
   async function insertTours(tours, dateData, uploadRecord, finalDate) {
     let totalTours = 0
     let totalParcels = 0
+    const skipped = [] // tournées refusées par la base : on les signale au lieu de les ignorer en silence
 
     // Cache des delivery_dates par date
     const dateCache = { [finalDate]: dateData }
@@ -372,7 +373,7 @@ export default function UploadPDF() {
         }, { onConflict: 'reference_id,delivery_date_id' })
         .select().single()
 
-      if (tourError) { console.warn(`Tournée ${tour.finalName} ignorée :`, tourError.message); continue }
+      if (tourError) { console.warn(`Tournée ${tour.finalName} ignorée :`, tourError.message); skipped.push(`${tour.finalName} (${tourError.message})`); continue }
 
       if (tour.parcels.length > 0) {
         await supabase.from('parcels').upsert(
@@ -397,6 +398,7 @@ export default function UploadPDF() {
 
     setResult({ success: true, tours: totalTours, parcels: totalParcels, details: tours.map(t => ({ name: t.finalName, parcels: t.parcels, excluded: t.excluded })) })
     toast.success(`Import terminé : ${totalTours} tournées, ${totalParcels} colis`)
+    if (skipped.length) toast.error(`${skipped.length} tournée(s) NON importée(s) : ${skipped.join(' ; ')}`, { duration: 15000 })
   }
 
   return (
