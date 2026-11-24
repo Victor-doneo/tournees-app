@@ -12,7 +12,7 @@ for (const [k, v] of Object.entries({ URBANTZ_EMAIL, URBANTZ_PASSWORD, SUPABASE_
 const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map(x => [x.type, x.value]))
 const day = DATE || `${p.year}-${p.month}-${p.day}`
 const mins = Number(p.hour) * 60 + Number(p.minute)
-if (!FORCE && !DATE && (mins < 10 * 60 || mins > 18 * 60)) { console.log(`Il est ${p.hour}h${p.minute} à Paris : extraction prévue de 10h à 18h, rien à faire.`); process.exit(0) }
+if (!FORCE && !DATE && (mins < 10 * 60 || mins > 20 * 60 + 45)) { console.log(`Il est ${p.hour}h${p.minute} à Paris : extraction prévue de 10h à 20h45, rien à faire.`); process.exit(0) }
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 const JOB = 'urbantz_retours'
 // Suivi d'exécution : une ligne par automatisme (table job_runs), affichée dans « Suivi des tournées »

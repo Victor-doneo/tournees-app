@@ -1,8 +1,8 @@
-name: Colis à retourner Urbantz (10h-18h)
+name: Colis à retourner Urbantz (10h-20h45)
 on:
   schedule:
-    - cron: '0,30 8-16 * * 1-6'   # été (UTC+2) : le script ne travaille que de 10h à 18h, heure de Paris
-    - cron: '0,30 9-17 * * 1-6'  # hiver (UTC+1)
+    - cron: '0,30 8-18 * * 1-6'   # été (UTC+2) : le script ne travaille que de 10h à 20h45, heure de Paris
+    - cron: '0,30 9-19 * * 1-6'  # hiver (UTC+1)
   workflow_dispatch:
     inputs:
       date:
