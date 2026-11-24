@@ -118,6 +118,18 @@ export default function SuiviTournees({ readOnly = false }) {
     if (back.length) toast.success('Tournée revenue ✔')
     fetchAll()
   }
+  // Désaccuse la réception : les colis redeviennent « en attente » et la tournée n'est plus marquée rentrée
+  async function unreceive(list) {
+    const rows = list.filter(r => r.received_at)
+    if (!rows.length) return toast('Aucun accusé de réception à annuler')
+    if (!confirm(`Annuler l'accusé de réception de ${rows.length} colis ?`)) return
+    const { error } = await supabase.from('return_labels').update({ received_at: null, received_by: null, reflex_recv_status: null, reflex_recv_checked_at: null, reflex_recv_line: null }).in('id', rows.map(r => r.id))
+    if (error) return toast.error(error.message)
+    const codes = new Set(rows.map(r => r.tour_code).filter(Boolean))
+    for (const t of tours.filter(t => codes.has(refOf(t)) && t.heure_retour)) await supabase.from('tours').update({ heure_retour: null, status: 'pending' }).eq('id', t.id)
+    toast.success(`${rows.length} accusé(s) de réception annulé(s)`)
+    fetchAll()
+  }
   async function scanReceive(e) {
     e.preventDefault()
     const code = scan.trim(); if (!code) return
@@ -161,12 +173,13 @@ export default function SuiviTournees({ readOnly = false }) {
               <td>{r.reflex_reception ? <b>{r.reflex_reception}</b> : (/contre reprise/i.test(r.reason || '') ? (/Aucune ligne LCR|Absence de ligne/i.test(r.reflex_note || '')
                 ? <span style={{ color: 'var(--red)', fontSize: 12, fontWeight: 600 }} title="REFLEX ne contient aucune ligne de réception LCR pour ce BP">Absence de ligne de réception</span>
                 : <span style={{ color: 'var(--gray-400)', fontSize: 12 }} title={r.reflex_note || ''}>{r.reflex_note || 'à venir'}</span>) : '—')}</td>
-              <td>{r.received_at ? <span className="badge badge-green">{hhmm(r.received_at)}</span> : readOnly ? <span style={{ color: 'var(--gray-400)' }}>En attente</span> : <button className="btn btn-secondary btn-sm" onClick={() => receive([r])}>Accuser réception</button>}</td>
+              <td>{r.received_at ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span className="badge badge-green">{hhmm(r.received_at)}</span>{!readOnly && <button className="btn btn-ghost btn-sm" title="Annuler l'accusé de réception" style={{ padding: '0 6px', color: 'var(--red)' }} onClick={() => unreceive([r])}>✕</button>}</span> : readOnly ? <span style={{ color: 'var(--gray-400)' }}>En attente</span> : <button className="btn btn-secondary btn-sm" onClick={() => receive([r])}>Accuser réception</button>}</td>
               <td>{r.printed_at ? hhmm(r.printed_at) : '—'}</td>
             </tr>))}</tbody>
         </table>
         {!readOnly && <div style={{ padding: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-secondary btn-sm" onClick={() => receive(list)}><CheckCircle size={14} /> Tout réceptionner</button>
+          {list.some(r => r.received_at) && <button className="btn btn-secondary btn-sm" style={{ color: 'var(--red)' }} onClick={() => unreceive(list)}>Annuler les réceptions</button>}
           <button className="btn btn-secondary btn-sm" onClick={() => print(list.filter(r => sel.has(r.id)))}><Printer size={14} /> Imprimer les cochés</button>
         </div>}
       </div>
