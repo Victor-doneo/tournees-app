@@ -47,9 +47,9 @@ const OVERDUE_DAYS = 3, OVERDUE_FROM = '2026-11-16'
 const lateGroups = new Map()
 {
   const limit = addDays(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date()), -OVERDUE_DAYS)
-  const { data: late, error: le } = await sb.from('return_labels').select('id, barcode, reason, tour_code, task_date')
+  const { data: late, error: le } = await sb.from('return_labels').select('id, barcode, reason, tour_code, task_date, reflex_recv_status, reflex_recv_line')
     .is('received_at', null).is('overdue_demande_id', null).gte('task_date', OVERDUE_FROM).lte('task_date', limit)
-    .or('reflex_recv_status.is.null,reflex_recv_status.not.in.(receptionne,livre)').limit(500)
+    .or('reflex_recv_status.is.null,reflex_recv_status.neq.livre').limit(500)
   if (le) console.log('Demandes de retard ignorées (migration supabase_migration_reflex_verification.sql lancée ?) :', le.message)
   else for (const l of late || []) {
     const bp = /contre reprise/i.test(l.reason || '') ? String(l.barcode).replace(/^7/, '').trim() : String(l.barcode).trim()
@@ -435,6 +435,13 @@ try {
   // Retours en retard : le colis est-il déjà réceptionné dans REFLEX ? (ligne de ARTICLE_USER datée >= date de la tournée)
   for (const [bp, labels] of [...lateGroups].slice(0, 25)) {
     try {
+      // Déjà vu « réceptionné » dans REFLEX par un contrôle précédent : pas besoin de rechercher à nouveau
+      if (labels.every(l => l.reflex_recv_status === 'receptionne')) {
+        const d = (labels.find(l => l.reflex_recv_line) || {}).reflex_recv_line || null
+        console.log(`Retour en retard ${bp} : déjà réceptionné dans REFLEX (contrôle précédent)`)
+        lateCheck.push({ bp, labels, found: true, date: d, error: null })
+        continue
+      }
       const minKey = labels.map(l => String(l.task_date).replace(/-/g, '')).sort().pop()
       const alt = await articleSearchCheck(bp, minKey)
       console.log(`Retour en retard ${bp} : ${alt.error ? 'contrôle REFLEX impossible (' + alt.error + ')' : alt.found ? 'déjà réceptionné dans REFLEX le ' + alt.date : 'non réceptionné dans REFLEX'}`)
@@ -489,14 +496,17 @@ if (lateCheck.length) {
     const ids = g.labels.map(l => l.id)
     const tours = [...new Set(g.labels.map(l => `${l.tour_code || '—'} du ${l.task_date.split('-').reverse().join('.')}`))].join(', ')
     if (g.found) {
-      // Réceptionné dans REFLEX mais accusé de réception non fait dans Superflash -> défaillance (processus « Retour entrant »)
-      const { error: fe } = await sb.from('defaillances').insert({
-        type: 'autre', processus: 'Retour entrant', bp: [g.bp], photos: [], status: 'ouverte', created_by: creator,
-        commentaire: `Colis réceptionné dans REFLEX (ligne ${ARTICLE_USER} du ${g.date}) mais accusé de réception non effectué dans Superflash. Retour attendu : ${tours}.`,
-      })
-      if (fe) { console.log(`Défaillance non créée pour ${g.bp} : ${fe.message}`); continue } // on réessaiera au prochain passage
-      // Marqué « réceptionné dans REFLEX » : le colis sort des prochains contrôles (donc une seule défaillance par colis)
-      await sb.from('return_labels').update({ reflex_recv_status: 'receptionne', reflex_recv_checked_at: new Date().toISOString(), reflex_recv_line: `${g.date} (Recherche article)` }).in('id', ids)
+      // Réceptionné dans REFLEX mais accusé de réception non fait dans Superflash -> demande à DONEO (mettre le colis en « réceptionné » dans Superflash)
+      const ligne = g.date ? `ligne ${ARTICLE_USER} du ${g.date}` : 'ligne de réception'
+      const row = {
+        type: 'autre', bp: [g.bp], photos: [], status: 'ouverte', created_by: creator,
+        commentaire: `Colis réceptionné dans REFLEX (${ligne}) mais accusé de réception non effectué dans Superflash. Merci de le passer en « réceptionné » dans Superflash. Retour attendu : ${tours}.`,
+      }
+      let { data: dem2, error: fe } = await sb.from('demandes').insert({ ...row, assigned_to: 'doneo' }).select('id').single()
+      if (fe && /assigned_to/.test(fe.message)) ({ data: dem2, error: fe } = await sb.from('demandes').insert(row).select('id').single()) // migration d'affectation pas encore lancée
+      if (fe) { console.log(`Demande non créée pour ${g.bp} : ${fe.message}`); continue } // on réessaiera au prochain passage
+      // Une seule demande par colis (overdue_demande_id) ; le colis reste marqué « réceptionné dans REFLEX » (hors du mail des retards)
+      await sb.from('return_labels').update({ overdue_demande_id: dem2.id, reflex_recv_status: 'receptionne', reflex_recv_checked_at: new Date().toISOString(), reflex_recv_line: g.date || 'Réceptionné REFLEX' }).in('id', ids)
       lateInReflex++
       continue
     }
@@ -508,8 +518,8 @@ if (lateCheck.length) {
     lateDemandes++
     await sb.from('return_labels').update({ overdue_demande_id: dem.id }).in('id', ids)
   }
-  console.log(`Retours en retard : ${lateDemandes} demande(s) créée(s), ${lateInReflex} déjà réceptionné(s) dans REFLEX (défaillance créée)`)
+  console.log(`Retours en retard : ${lateDemandes} demande(s) créée(s), ${lateInReflex} déjà réceptionné(s) dans REFLEX (demande à DONEO créée)`)
 }
-const okMsg = `${out.filter(o => o.reflex_reception).length}/${todo.length} n° de réception ; ${vOut.filter(v => v.status === 'receptionne').length}/${verif.length} réceptions vérifiées${demandes ? `, ${demandes} demande(s) créée(s)` : ''}${lateDemandes || lateInReflex ? `, retards : ${lateDemandes} demande(s), ${lateInReflex} défaillance(s)` : ''}`
+const okMsg = `${out.filter(o => o.reflex_reception).length}/${todo.length} n° de réception ; ${vOut.filter(v => v.status === 'receptionne').length}/${verif.length} réceptions vérifiées${demandes ? `, ${demandes} demande(s) créée(s)` : ''}${lateDemandes || lateInReflex ? `, retards : ${lateDemandes} demande(s), ${lateInReflex} demande(s) DONEO réception` : ''}`
 console.log('OK : ' + okMsg)
 await report(true, okMsg)
