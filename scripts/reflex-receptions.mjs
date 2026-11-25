@@ -411,7 +411,7 @@ try {
       const dateOf = c => (c.find(x => /^\d{2}\/\d{2}\/\d{4}$/.test(x)) || '')
       const rows = cells.filter(c => dateOf(c)).sort((a, b) => toKey(dateOf(a)).localeCompare(toKey(dateOf(b))))
       const last = rows[rows.length - 1]
-      let status = 'introuvable', line = null
+      let status = 'introuvable', line = null, checkFailed = false
       if (last) {
         const r = last.findIndex(x => x === bp || x.includes(bp))
         const manq = parseInt(last[r + 3]) || 0
@@ -425,11 +425,11 @@ try {
         const minKey = v.labels.map(l => l.received_at ? pDay(l.received_at).replace(/-/g, '') : '').filter(Boolean).sort().pop() || '00000000'
         try {
           const alt = await articleSearchCheck(bp, minKey)
-          if (alt.error) console.log(`  Recherche article ${bp} : ${alt.error}`)
+          if (alt.error) { checkFailed = true; console.log(`  Recherche article ${bp} : ${alt.error}`) }
           if (alt.found) { status = 'receptionne'; line = `${alt.date} (Recherche article)`; console.log(`Vérif BP ${bp} -> receptionne (Recherche article, ${ARTICLE_USER} le ${alt.date})`) }
-        } catch (e) { console.log(`  Recherche article ${bp} : erreur ${e.message}`); await closeResults() }
+        } catch (e) { checkFailed = true; console.log(`  Recherche article ${bp} : erreur ${e.message}`); await closeResults() }
       }
-      vOut.push({ ...v, status, line })
+      vOut.push({ ...v, status, line, checkFailed })
     } catch (e) { console.log(`Vérif BP ${bp} : erreur ${e.message}`); await shot(`erreur-verif-${bp}`); await closeResults() }
   }
   // Retours en retard : le colis est-il déjà réceptionné dans REFLEX ? (ligne de ARTICLE_USER datée >= date de la tournée)
@@ -469,7 +469,7 @@ if (vOut.length) {
   if (!creator && after18) creator = (await sb.from('users').select('id').eq('role', 'admin').limit(1)).data?.[0]?.id || null
   for (const v of vOut) {
     let demandeId = null
-    const needDemande = after18 && v.status !== 'receptionne' && v.labels.some(l => !l.reflex_demande_id) && creator
+    const needDemande = after18 && v.status !== 'receptionne' && !v.checkFailed && v.labels.some(l => !l.reflex_demande_id) && creator
     if (needDemande) {
       const tours = [...new Set(v.labels.map(l => `${l.tour_code || '—'} du ${l.task_date.split('-').reverse().join('.')}`))].join(', ')
       const { data: dem, error: de } = await sb.from('demandes').insert({
