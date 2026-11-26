@@ -132,7 +132,12 @@ export default function PlanChargement() {
         body: JSON.stringify({ delivery_date: date.delivery_date, table_html: buildTableHtml() }),
       })
       const out = await res.json().catch(() => ({}))
-      if (res.ok) toast.success(`Plan envoyé à ${out.sent_to} destinataire(s)`)
+      if (res.ok) {
+        toast.success(`Plan envoyé à ${out.sent_to} destinataire(s)`)
+        // Le créneau de chaque tournée est conservé (affiché dans « Suivi des tournées » : Heure de chargement)
+        const results = await Promise.all(plan.map(t => supabase.from('tours').update({ loading_slot: fmtMin(t.slot) }).eq('id', t.id)))
+        if (results.some(r => r.error)) toast.error('Créneaux non enregistrés (migration supabase_migration_loading_slot.sql lancée ?)')
+      }
       else toast.error(out.error || 'Envoi impossible')
     } catch (e) { toast.error('Erreur : ' + e.message) } finally { setSending(false) }
   }
