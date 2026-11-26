@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useDemandeNotifications } from './demandeNotifications'
+import { useUnrecognizedRounds } from './unrecognizedRounds'
 import {
   LayoutDashboard, Truck, Upload, Users, Search, FileSearch, RotateCcw, LogOut, Menu, X, BookMarked, ClipboardList, Map, Activity, ShieldAlert, MailIcon, PackageX, ClipboardCheck, MessageSquarePlus, AlertTriangle, ListChecks, LayoutGrid, Bell
 } from 'lucide-react'
@@ -61,6 +62,7 @@ export default function AdminLayout() {
   const navigate = useNavigate()
   const notifs = useDemandeNotifications({ toastOnNew: true })
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const unrecognized = useUnrecognizedRounds()
 
   const initials = profile?.full_name
     ? profile.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -107,6 +109,9 @@ export default function AdminLayout() {
                 >
                   {item.icon}
                   {item.label}
+                  {item.to === '/admin/reference-tours' && unrecognized.length > 0 && (
+                    <span title="Tournées Urbantz non reconnues" style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: 11, fontWeight: 700, padding: '1px 7px', minWidth: 18, textAlign: 'center' }}>{unrecognized.length}</span>
+                  )}
                   {(item.to === '/admin/demandes' || item.to === '/admin/notifications') && notifs.total > 0 && (
                     <span title="Réponses non lues" style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: 11, fontWeight: 700, padding: '1px 7px', minWidth: 18, textAlign: 'center' }}>{notifs.total}</span>
                   )}

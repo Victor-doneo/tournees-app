@@ -5,7 +5,7 @@ import { Truck, Clock, PackageX, AlertTriangle } from 'lucide-react'
 // Règles (heures de Paris, créneau = tours.loading_slot du plan de chargement envoyé / enregistré)
 const DEPART_RETARD_MIN = 60 // « Départ en retard » : départ réel du dépôt > créneau + 1 h
 const ARRIVEE_RETARD_MIN = 10 // « Arrivée en retard » : premier scan > créneau + 10 min
-const PARCELS_FROM = '2026-11-16' // colis à rapatrier : suivis seulement à partir du 16/11/2026
+const PARCELS_FROM = '2026-11-16' // début du suivi : colis à rapatrier et tournées non rentrées ignorent les jours précédents
 const EXCLUDED_RECV = ['receptionne', 'livre'] // colis déjà réceptionné dans REFLEX / livré : pas en attente de rapatriement
 
 const parisDay = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date(d))
@@ -70,27 +70,31 @@ export default function DashboardTransport() {
       }
       // Tournée attendue = elle a des colis à retourner ; jours passés seulement, hors samedi/dimanche
       const dow = new Date(day + 'T12:00:00').getDay()
-      if (day < today && dow !== 6 && dow !== 0 && withLabels.has(`${day}|${codeOf(t)}`)) {
+      if (day >= PARCELS_FROM && day < today && dow !== 6 && dow !== 0 && withLabels.has(`${day}|${codeOf(t)}`)) {
         s.expected++
         const backSameDay = t.heure_retour && parisDay(t.heure_retour) <= day
         if (!backSameDay) { s.notBack++; s.notBackList.push({ day, code: codeOf(t), back: t.heure_retour ? `${fr(parisDay(t.heure_retour))} ${hhmm(t.heure_retour)}` : 'pas rentrée' }) }
       }
     }
     for (const l of labels) {
-      if (l.task_date < today && l.task_date >= PARCELS_FROM) get(supplierOf.get(`${l.task_date}|${l.tour_code}`) || 'Tournée non reconnue').parcelsTotal++
+      if (l.task_date < today && l.task_date >= PARCELS_FROM && supplierOf.get(`${l.task_date}|${l.tour_code}`)) get(supplierOf.get(`${l.task_date}|${l.tour_code}`)).parcelsTotal++
       if (l.received_at || EXCLUDED_RECV.includes(l.reflex_recv_status) || l.task_date >= today || l.task_date < PARCELS_FROM) continue
-      const s = get(supplierOf.get(`${l.task_date}|${l.tour_code}`) || 'Tournée non reconnue')
+      const sName = supplierOf.get(`${l.task_date}|${l.tour_code}`)
+      if (!sName) continue // tournée non reconnue : signalée dans « Tournées de référence »
+      const s = get(sName)
       s.parcels++; s.parcelList.push({ day: l.task_date, code: l.tour_code || '—', bp: l.barcode })
     }
     const rows = Object.values(sup)
     const ratio = (a, b) => (b ? a / b : null)
     for (const r of rows) r.ratios = [ratio(r.depRetard, r.withSlot), ratio(r.arrRetard, r.withSlot), ratio(r.notBack, r.expected), ratio(r.parcels, r.parcelsTotal)]
-    // Classement : rang moyen sur les 4 proportions (moins = mieux) ; une proportion inconnue (aucune donnée) n'entre pas dans la moyenne
-    for (let i = 0; i < 4; i++) {
-      const vals = rows.map(r => r.ratios[i]).filter(v => v != null).sort((a, b) => a - b)
-      for (const r of rows) r['rk' + i] = r.ratios[i] == null ? null : vals.indexOf(r.ratios[i]) + 1
+    // Score qualité /100 = 100 × (1 − moyenne pondérée des 4 proportions de défaut) ; une proportion sans donnée est ignorée
+    const W = [25, 25, 30, 20] // départs en retard, arrivées en retard, non rentrées, colis à rapatrier
+    for (const r of rows) {
+      let w = 0, acc = 0
+      r.ratios.forEach((v, i) => { if (v != null) { w += W[i]; acc += W[i] * Math.min(v, 1) } })
+      r.quality = w ? Math.round(100 * (1 - acc / w)) : null
+      r.score = r.quality == null ? Infinity : -r.quality
     }
-    for (const r of rows) { const rk = [0, 1, 2, 3].map(i => r['rk' + i]).filter(v => v != null); r.score = rk.length ? rk.reduce((a, b) => a + b, 0) / rk.length : Infinity }
     rows.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
     rows.forEach((r, i) => { r.rank = r.score === Infinity ? null : i + 1 })
     const sum = k => rows.reduce((a, r) => a + r[k], 0)
@@ -110,7 +114,7 @@ export default function DashboardTransport() {
     const list = lists[kind]
     if (!list.length) return null
     return (
-      <tr><td colSpan={6} style={{ background: 'var(--gray-50, #f9fafb)', padding: '8px 16px', fontSize: 12 }}>
+      <tr><td colSpan={7} style={{ background: 'var(--gray-50, #f9fafb)', padding: '8px 16px', fontSize: 12 }}>
         {kind === 'dep' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, départ {x.real} (+{x.d} min)</div>)}
         {kind === 'arr' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, premier scan {x.real} (+{x.d} min)</div>)}
         {kind === 'nb' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : {x.back}</div>)}
@@ -123,12 +127,15 @@ export default function DashboardTransport() {
   return (
     <>
       <div className="page-header">
+        <div className="flex items-center justify-between" style={{ gap: 12, flexWrap: 'wrap' }}>
         <div><h2 className="page-title">Dashboard - Transport</h2><p className="page-subtitle">Retards de départ et d'arrivée par fournisseur, tournées non rentrées et colis à rapatrier</p></div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 13 }}>Du <input type="date" className="form-input" style={{ width: 'auto', display: 'inline-block' }} value={from} max={to} onChange={e => e.target.value && setFrom(e.target.value)} /></label>
           <label style={{ fontSize: 13 }}>au <input type="date" className="form-input" style={{ width: 'auto', display: 'inline-block' }} value={to} min={from} onChange={e => e.target.value && setTo(e.target.value)} /></label>
         </div>
+        </div>
       </div>
+      <div className="page-body">
       {error && <div className="card" style={{ padding: 12, color: 'var(--red)', marginBottom: 12 }}>Erreur : {error} (migrations <code>supabase_migration_loading_slot.sql</code>, <code>supabase_migration_depart_reel.sql</code> et <code>supabase_migration_premier_scan.sql</code> lancées ?)</div>}
       {loading ? <div className="loading-screen"><div className="spinner" /></div> : <>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -139,12 +146,13 @@ export default function DashboardTransport() {
         </div>
         <div className="card" style={{ overflow: 'hidden' }}>
           <div className="table-wrapper"><table>
-            <thead><tr><th style={{ textAlign: 'center', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Rang</th><th style={{ textAlign: 'left', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Fournisseur</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Départs en retard<br/>(&gt; 1 h)</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Arrivées en retard<br/>(&gt; 10 min)</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Non rentrées<br/>le jour même</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Colis à<br/>rapatrier</th></tr></thead>
+            <thead><tr><th style={{ textAlign: 'center', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Rang</th><th style={{ textAlign: 'center', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Score<br/>qualité</th><th style={{ textAlign: 'left', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Fournisseur</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Départs en retard<br/>(&gt; 1 h)</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Arrivées en retard<br/>(&gt; 10 min)</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Non rentrées<br/>le jour même</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Colis à<br/>rapatrier</th></tr></thead>
             <tbody>
-              {stats.rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--gray-400)' }}>Aucune tournée sur la période</td></tr>}
+              {stats.rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--gray-400)' }}>Aucune tournée sur la période</td></tr>}
               {stats.rows.map(r => [
                 <tr key={r.name}>
                   <td style={{ textAlign: 'center', fontWeight: 800, padding: '6px' }}>{r.rank ?? '—'}</td>
+                  <td style={{ textAlign: 'center', padding: '6px' }}>{r.quality == null ? '—' : <span className="badge" style={{ background: r.quality >= 90 ? '#dcfce7' : r.quality >= 75 ? '#fef3c7' : '#fee2e2', color: r.quality >= 90 ? '#166534' : r.quality >= 75 ? '#92400e' : '#991b1b', fontWeight: 800 }}>{r.quality}</span>}</td>
                   <td style={{ fontWeight: 700, padding: '6px' }}>{r.name}</td>
                   {cellBtn(r, 'dep', r.depRetard, true, pct(r.depRetard, r.withSlot), r.withSlot)}
                   {cellBtn(r, 'arr', r.arrRetard, true, pct(r.arrRetard, r.withSlot), r.withSlot)}
@@ -157,9 +165,10 @@ export default function DashboardTransport() {
           </table></div>
         </div>
         <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 10, lineHeight: 1.5 }}>
-          <AlertTriangle size={12} style={{ verticalAlign: -2 }} /> Les retards se calculent sur les tournées dont le créneau a été enregistré (envoi ou « Enregistrer les créneaux » du plan de chargement) et dont l'heure Urbantz est connue. « Non rentrées le jour même » compte les jours passés (hors week-end) où la tournée avait des colis à retourner. Les colis en attente excluent ceux réceptionnés dans REFLEX ou livrés. Les pourcentages sont : départs et arrivées en retard sur les tournées avec créneau, non rentrées sur les tournées attendues, colis à rapatrier sur les colis à retourner (depuis le 16/11). Classement : rang moyen sur ces quatre pourcentages, le meilleur (le moins de retard et de colis en attente) en premier.
+          <AlertTriangle size={12} style={{ verticalAlign: -2 }} /> Les retards se calculent sur les tournées dont le créneau a été enregistré (envoi ou « Enregistrer les créneaux » du plan de chargement) et dont l'heure Urbantz est connue. « Non rentrées le jour même » compte les jours passés (hors week-end) où la tournée avait des colis à retourner. Les colis en attente excluent ceux réceptionnés dans REFLEX ou livrés. Les pourcentages sont : départs et arrivées en retard sur les tournées avec créneau, non rentrées sur les tournées attendues, colis à rapatrier sur les colis à retourner (depuis le 16/11). Score qualité (sur 100) = 100 moins la moyenne pondérée de ces quatre pourcentages (départs en retard 25 %, arrivées en retard 25 %, non rentrées 30 %, colis à rapatrier 20 %) ; le classement va du meilleur score au moins bon. Les tournées non reconnues sont signalées dans « Tournées de référence ».
         </p>
       </>}
+      </div>
     </>
   )
 }

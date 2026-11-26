@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import { useUnrecognizedRounds } from './unrecognizedRounds'
 import { supabase } from './supabase'
 import { Plus, Trash2, BookMarked } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function ReferenceTours() {
+  const unrecognized = useUnrecognizedRounds()
   const [refs, setRefs] = useState([])
   const [loading, setLoading] = useState(true)
   const [newName, setNewName] = useState('')
@@ -56,6 +58,13 @@ export default function ReferenceTours() {
       </div>
 
       <div className="page-body" style={{ maxWidth: '640px' }}>
+        {unrecognized.length > 0 && (
+          <div className="card" style={{ padding: 14, marginBottom: 16, borderLeft: '4px solid var(--red)' }}>
+            <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6 }}>{unrecognized.length} tournée(s) Urbantz non reconnue(s) depuis le 16/11</div>
+            <div style={{ fontSize: 13, color: 'var(--gray-600)', marginBottom: 8 }}>Ces colis à retourner n'ont pas pu être rattachés à une tournée : ajoutez la référence correspondante ci-dessous (ou vérifiez l'import du PDF du jour). Le rattachement se fait au prochain passage Urbantz.</div>
+            {unrecognized.map(u => <div key={u.name} style={{ fontSize: 13 }}><b>{u.name}</b> : {u.count} colis · {u.days.map(d => d.split('-').reverse().slice(0, 2).join('/')).join(', ')}</div>)}
+          </div>
+        )}
 
         {/* Formulaire ajout */}
         <div className="card" style={{ marginBottom: 20 }}>
