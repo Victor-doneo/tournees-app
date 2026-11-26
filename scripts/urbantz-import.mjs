@@ -91,6 +91,7 @@ if (process.env.DEBUG_CODE) {
     const pick = (o, path = '') => Object.entries(o || {}).flatMap(([k, v]) => v && typeof v === 'object' && !Array.isArray(v) ? pick(v, path + k + '.') : /start|begin|depart|time|hour|date|arriv|when|begin/i.test(k) && !Array.isArray(v) ? [[path + k, v]] : [])
     console.log('DEBUG champs de la tournée', m.name, JSON.stringify(Object.keys(m)))
     console.log('DEBUG horaires', JSON.stringify(pick(m)))
+    console.log('DEBUG début (Paris)', hhmm(m.startTime), '| fin', hhmm(m.endTime), '| arrivées des stops :', (m.stops || []).map(st => `${st.type[0]}${hhmm(st.arriveTime)}`).join(' '))
     for (const st of (m.stops || []).slice(0, 3)) console.log('DEBUG stop', st.type, JSON.stringify(pick(st)))
   }
 }
