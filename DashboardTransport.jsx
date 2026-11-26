@@ -54,7 +54,7 @@ export default function DashboardTransport() {
 
   const stats = useMemo(() => {
     const sup = {}
-    const get = k => (sup[k] = sup[k] || { name: k, withSlot: 0, depRetard: 0, arrRetard: 0, expected: 0, notBack: 0, parcels: 0, lateDep: [], lateArr: [], notBackList: [], parcelList: [] })
+    const get = k => (sup[k] = sup[k] || { name: k, withSlot: 0, depRetard: 0, arrRetard: 0, expected: 0, notBack: 0, parcels: 0, lateDep: [], lateArr: [], notBackList: [], parcelList: [], parcelsTotal: 0 })
     const supplierOf = new Map() // `${jour}|${code}` -> fournisseur
     const dayOfTour = t => t.delivery_dates?.delivery_date
     const codeOf = t => t.tours_references?.name || t.name
@@ -77,11 +77,22 @@ export default function DashboardTransport() {
       }
     }
     for (const l of labels) {
+      if (l.task_date < today && l.task_date >= PARCELS_FROM) get(supplierOf.get(`${l.task_date}|${l.tour_code}`) || 'Tournée non reconnue').parcelsTotal++
       if (l.received_at || EXCLUDED_RECV.includes(l.reflex_recv_status) || l.task_date >= today || l.task_date < PARCELS_FROM) continue
       const s = get(supplierOf.get(`${l.task_date}|${l.tour_code}`) || 'Tournée non reconnue')
       s.parcels++; s.parcelList.push({ day: l.task_date, code: l.tour_code || '—', bp: l.barcode })
     }
-    const rows = Object.values(sup).sort((a, b) => a.name.localeCompare(b.name))
+    const rows = Object.values(sup)
+    const ratio = (a, b) => (b ? a / b : null)
+    for (const r of rows) r.ratios = [ratio(r.depRetard, r.withSlot), ratio(r.arrRetard, r.withSlot), ratio(r.notBack, r.expected), ratio(r.parcels, r.parcelsTotal)]
+    // Classement : rang moyen sur les 4 proportions (moins = mieux) ; une proportion inconnue (aucune donnée) n'entre pas dans la moyenne
+    for (let i = 0; i < 4; i++) {
+      const vals = rows.map(r => r.ratios[i]).filter(v => v != null).sort((a, b) => a - b)
+      for (const r of rows) r['rk' + i] = r.ratios[i] == null ? null : vals.indexOf(r.ratios[i]) + 1
+    }
+    for (const r of rows) { const rk = [0, 1, 2, 3].map(i => r['rk' + i]).filter(v => v != null); r.score = rk.length ? rk.reduce((a, b) => a + b, 0) / rk.length : Infinity }
+    rows.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
+    rows.forEach((r, i) => { r.rank = r.score === Infinity ? null : i + 1 })
     const sum = k => rows.reduce((a, r) => a + r[k], 0)
     return { rows, tot: { withSlot: sum('withSlot'), depRetard: sum('depRetard'), arrRetard: sum('arrRetard'), expected: sum('expected'), notBack: sum('notBack'), parcels: sum('parcels') } }
   }, [tours, labels, today])
@@ -99,7 +110,7 @@ export default function DashboardTransport() {
     const list = lists[kind]
     if (!list.length) return null
     return (
-      <tr><td colSpan={8} style={{ background: 'var(--gray-50, #f9fafb)', padding: '8px 16px', fontSize: 12 }}>
+      <tr><td colSpan={9} style={{ background: 'var(--gray-50, #f9fafb)', padding: '8px 16px', fontSize: 12 }}>
         {kind === 'dep' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, départ {x.real} (+{x.d} min)</div>)}
         {kind === 'arr' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, premier scan {x.real} (+{x.d} min)</div>)}
         {kind === 'nb' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : {x.back}</div>)}
@@ -107,7 +118,7 @@ export default function DashboardTransport() {
       </td></tr>
     )
   }
-  const cellBtn = (r, kind, n, red) => <td style={{ textAlign: 'right' }}>{n ? <button className="btn btn-ghost btn-sm" style={{ color: red ? 'var(--red)' : undefined, fontWeight: 700 }} onClick={() => setOpen(open && open.n === r.name && open.k === kind ? null : { n: r.name, k: kind })}>{n}</button> : <span style={{ color: 'var(--gray-400)' }}>0</span>}</td>
+  const cellBtn = (r, kind, n, red, p) => <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{n ? <button className="btn btn-ghost btn-sm" style={{ color: red ? 'var(--red)' : undefined, fontWeight: 700 }} onClick={() => setOpen(open && open.n === r.name && open.k === kind ? null : { n: r.name, k: kind })}>{n} <span style={{ fontWeight: 500 }}>({p})</span></button> : <span style={{ color: 'var(--gray-400)' }}>0 ({p})</span>}</td>
 
   return (
     <>
@@ -128,19 +139,19 @@ export default function DashboardTransport() {
         </div>
         <div className="card" style={{ overflow: 'hidden' }}>
           <div className="table-wrapper"><table>
-            <thead><tr><th>Fournisseur</th><th style={{ textAlign: 'right' }}>Tournées avec créneau</th><th style={{ textAlign: 'right' }}>Départs en retard</th><th style={{ textAlign: 'right' }}>Arrivées en retard</th><th style={{ textAlign: 'right' }}>Tournées attendues</th><th style={{ textAlign: 'right' }}>Non rentrées le jour même</th><th style={{ textAlign: 'right' }}>Proportion</th><th style={{ textAlign: 'right' }}>Colis à rapatrier</th></tr></thead>
+            <thead><tr><th style={{ textAlign: 'center' }}>Rang</th><th>Fournisseur</th><th style={{ textAlign: 'right' }}>Tournées avec créneau</th><th style={{ textAlign: 'right' }}>Départs en retard</th><th style={{ textAlign: 'right' }}>Arrivées en retard</th><th style={{ textAlign: 'right' }}>Tournées attendues</th><th style={{ textAlign: 'right' }}>Non rentrées le jour même</th><th style={{ textAlign: 'right' }}>Colis à rapatrier</th></tr></thead>
             <tbody>
-              {stats.rows.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 24, color: 'var(--gray-400)' }}>Aucune tournée sur la période</td></tr>}
+              {stats.rows.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--gray-400)' }}>Aucune tournée sur la période</td></tr>}
               {stats.rows.map(r => [
                 <tr key={r.name}>
+                  <td style={{ textAlign: 'center', fontWeight: 800 }}>{r.rank ?? '—'}</td>
                   <td style={{ fontWeight: 700 }}>{r.name}</td>
                   <td style={{ textAlign: 'right' }}>{r.withSlot}</td>
-                  {cellBtn(r, 'dep', r.depRetard, true)}
-                  {cellBtn(r, 'arr', r.arrRetard, true)}
+                  {cellBtn(r, 'dep', r.depRetard, true, pct(r.depRetard, r.withSlot))}
+                  {cellBtn(r, 'arr', r.arrRetard, true, pct(r.arrRetard, r.withSlot))}
                   <td style={{ textAlign: 'right' }}>{r.expected}</td>
-                  {cellBtn(r, 'nb', r.notBack, true)}
-                  <td style={{ textAlign: 'right', fontWeight: 700 }}>{pct(r.notBack, r.expected)}</td>
-                  {cellBtn(r, 'pc', r.parcels, true)}
+                  {cellBtn(r, 'nb', r.notBack, true, pct(r.notBack, r.expected))}
+                  {cellBtn(r, 'pc', r.parcels, true, pct(r.parcels, r.parcelsTotal))}
                 </tr>,
                 open && open.n === r.name ? <Fragment2 key={r.name + 'd'}>{detail(r, open.k)}</Fragment2> : null,
               ])}
@@ -148,7 +159,7 @@ export default function DashboardTransport() {
           </table></div>
         </div>
         <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 10, lineHeight: 1.5 }}>
-          <AlertTriangle size={12} style={{ verticalAlign: -2 }} /> Les retards se calculent sur les tournées dont le créneau a été enregistré (envoi ou « Enregistrer les créneaux » du plan de chargement) et dont l'heure Urbantz est connue. « Non rentrées le jour même » compte les jours passés (hors week-end) où la tournée avait des colis à retourner. Les colis en attente excluent ceux réceptionnés dans REFLEX ou livrés.
+          <AlertTriangle size={12} style={{ verticalAlign: -2 }} /> Les retards se calculent sur les tournées dont le créneau a été enregistré (envoi ou « Enregistrer les créneaux » du plan de chargement) et dont l'heure Urbantz est connue. « Non rentrées le jour même » compte les jours passés (hors week-end) où la tournée avait des colis à retourner. Les colis en attente excluent ceux réceptionnés dans REFLEX ou livrés. Les pourcentages sont : départs et arrivées en retard sur les tournées avec créneau, non rentrées sur les tournées attendues, colis à rapatrier sur les colis à retourner (depuis le 16/11). Classement : rang moyen sur ces quatre pourcentages, le meilleur (le moins de retard et de colis en attente) en premier.
         </p>
       </>}
     </>
