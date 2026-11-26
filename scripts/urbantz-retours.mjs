@@ -138,6 +138,33 @@ try {
 }
 await browser.close()
 
+// Heure de départ réelle du dépôt par tournée : événement « départ » du journal des colis (identique sur tous les colis d'une tournée)
+{
+  const byRound = new Map()
+  for (const t of tasks.values()) { const c = matchCode(t.roundName); if (c) { if (!byRound.has(c)) byRound.set(c, []); byRound.get(c).push(t) } }
+  const sec = w => new Date(w).toISOString().slice(0, 19)
+  const departs = new Map()
+  for (const [code, ts] of byRound) {
+    const entries = t => [...(Array.isArray(t.log) ? t.log : []), ...(t.items || []).flatMap(i => Array.isArray(i.log) ? i.log : [])].filter(e => e && e.when)
+    const named = ts.flatMap(entries).filter(e => /depart/i.test(JSON.stringify(e)))
+    let when = named.length ? named.map(e => e.when).sort()[0] : null, how = 'journal « départ »'
+    if (!when) { // à défaut : dernier événement commun à (presque) tous les colis de la tournée
+      const cnt = new Map()
+      for (const t of ts) for (const w of new Set(entries(t).map(e => sec(e.when)))) cnt.set(w, (cnt.get(w) || 0) + 1)
+      const shared = [...cnt].filter(([, n]) => ts.length >= 3 && n >= 0.8 * ts.length).map(([w]) => w).sort()
+      when = shared.length ? shared[shared.length - 1] + 'Z' : null; how = 'dernier événement commun'
+    }
+    if (when) departs.set(code, { when, how })
+  }
+  const hm = w => new Date(w).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' })
+  console.log(`Départs dépôt Urbantz : ${departs.size}/${byRound.size} tournées`, [...departs].slice(0, 6).map(([c, d]) => `${c} ${hm(d.when)} (${d.how})`).join(', '))
+  if (!DRY_RUN && dRow && departs.size) {
+    const { data: trs } = await sb.from('tours').select('id, name, urbantz_depart_reel, tours_references(name)').eq('delivery_date_id', dRow.id)
+    if (trs) for (const t of trs) { const d = departs.get(t.tours_references?.name || t.name); if (d && !t.urbantz_depart_reel) await sb.from('tours').update({ urbantz_depart_reel: d.when }).eq('id', t.id) }
+    else console.log('Départs dépôt non enregistrés (migration supabase_migration_depart_reel.sql lancée ?)')
+  }
+}
+
 // Règles de sélection
 const isDea = it => /(^|[^A-Z0-9])DEA([^A-Z0-9]|$)/i.test(`${it.name || ''} ${it.description || ''} ${JSON.stringify(it.metadata || {})}`)
 const stat = {}, rows = new Map()

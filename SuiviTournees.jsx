@@ -33,7 +33,8 @@ export default function SuiviTournees({ readOnly = false }) {
       if (!readOnly) await syncTourReturns(day) // tout réceptionné => tournée revenue
       const cols = 'id, name, status, retard, heure_retour, reference_id, type_livraison, heure_premiere_livraison, code_postal_premiere_livraison, tours_references(name)'
       const q = c => supabase.from('tours').select(c).eq('delivery_date_id', dateData.id).order('heure_premiere_livraison', { ascending: true, nullsFirst: false })
-      let { data, error } = await q(cols + ', urbantz_hub_depart')
+      let { data, error } = await q(cols + ', urbantz_hub_depart, urbantz_depart_reel')
+      if (error) ({ data, error } = await q(cols + ', urbantz_hub_depart'))
       if (error) ({ data } = await q(cols)) // migration Urbantz non lancée
       tl = data || []
     }
@@ -332,10 +333,9 @@ export default function SuiviTournees({ readOnly = false }) {
                     )}
                     {!readOnly && !t.heure_retour && (
                       <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
-                        <button className="btn btn-sm" disabled={isUpdating} onClick={() => toggleRetard(t)}
-                          style={{ background: t.retard ? '#fef2f2' : 'var(--white)', border: t.retard ? '1px solid #fca5a5' : '1px solid var(--gray-200)', color: t.retard ? 'var(--red)' : 'var(--gray-500)' }}>
-                          <AlertTriangle size={13} /><span style={{ marginLeft: 4, fontSize: 12 }}>{t.retard ? 'Retard signalé' : 'Signaler retard'}</span>
-                        </button>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 600, color: 'var(--gray-700)', padding: '0 4px' }} title="Heure de départ réelle du dépôt (Urbantz)">
+                          <Clock size={13} /> Départ dépôt : {t.urbantz_depart_reel ? hhmm(t.urbantz_depart_reel) : '—'}
+                        </span>
                         <button className="btn btn-sm" disabled={isUpdating} onClick={() => confirmerRetour(t)} style={{ background: '#f0fdf4', border: '1px solid #a7f3d0', color: '#059669' }}>
                           {isUpdating ? <div className="spinner" style={{ width: 13, height: 13 }} /> : <><Clock size={13} /><span style={{ marginLeft: 4, fontSize: 12 }}>Confirmer retour</span></>}
                         </button>
