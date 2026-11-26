@@ -12,3 +12,6 @@ create index if not exists delivery_ratings_date_idx on public.delivery_ratings 
 alter table public.delivery_ratings enable row level security;
 drop policy if exists "dr_read" on public.delivery_ratings;
 create policy "dr_read" on public.delivery_ratings for select using (public.has_tour_tracking_access());
+
+-- Codes-barres (BP) de la tâche, pour retrouver les colis d'une mauvaise note
+alter table public.delivery_ratings add column if not exists barcodes text[];

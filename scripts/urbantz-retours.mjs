@@ -226,13 +226,17 @@ await browser.close()
     const raw = md.EnqueteGlobale ?? md.enqueteGlobale
     const score = raw == null || raw === '' ? NaN : Number(String(raw).replace(',', '.'))
     if (!Number.isFinite(score)) continue
-    ratings.push({ task_id: String(t._id || t.id), task_date: day, tour_code: code, task_ref: t.taskId || null, score, comment: String(md.EnqueteCommentaire || '').trim() || null, updated_at: new Date().toISOString() })
+    ratings.push({ task_id: String(t._id || t.id), task_date: day, tour_code: code, task_ref: t.taskId || null, score, comment: String(md.EnqueteCommentaire || '').trim() || null, barcodes: (t.items || []).map(i => i.barcode && String(i.barcode).trim()).filter(Boolean), updated_at: new Date().toISOString() })
   }
   console.log(`Notes clients Urbantz : ${ratings.length} sur ${[...byRound.values()].reduce((a, ts) => a + ts.length, 0)} tâches`, ratings.slice(0, 6).map(r => `${r.tour_code} ${r.score}`).join(', '))
   if (!DRY_RUN && ratings.length) {
-    const { error: re } = await sb.from('delivery_ratings').upsert(ratings, { onConflict: 'task_id' })
+    let { error: re } = await sb.from('delivery_ratings').upsert(ratings, { onConflict: 'task_id' })
+    if (re && /barcodes/.test(re.message)) ({ error: re } = await sb.from('delivery_ratings').upsert(ratings.map(({ barcodes, ...r }) => r), { onConflict: 'task_id' })) // colonne barcodes absente
     if (re) console.log('Notes clients non enregistrées (migration supabase_migration_notes_clients.sql lancée ?) :', re.message)
+    else console.log(`Notes clients enregistrées : ${ratings.length} (dont ${ratings.filter(r => r.score <= 1).length} à 1 étoile)`)
   }
+  // RATINGS_ONLY=1 (avec DATE) : relecture des notes seule (fin de journée, puis J+3), sans toucher aux colis ni aux demandes
+  if (process.env.RATINGS_ONLY) { console.log(`Relecture des notes ${day} terminée.`); process.exit(0) }
 }
 
 // Règles de sélection

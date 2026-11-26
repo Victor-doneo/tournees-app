@@ -49,7 +49,8 @@ export default function DashboardTransport() {
       const l = await fetchAll(() => supabase.from('return_labels')
         .select('id, task_date, tour_code, barcode, received_at, reflex_recv_status').gte('task_date', from).lte('task_date', to).order('id'))
       let rt = []
-      try { rt = await fetchAll(() => supabase.from('delivery_ratings').select('task_id, task_date, tour_code, score').gte('task_date', from).lte('task_date', to).order('task_id')) } catch { rt = [] } // table absente tant que la migration n'est pas lancée
+      const selRt = cols => fetchAll(() => supabase.from('delivery_ratings').select(cols).gte('task_date', from).lte('task_date', to).order('task_id'))
+      try { rt = await selRt('task_id, task_date, tour_code, task_ref, score, comment, barcodes') } catch { try { rt = await selRt('task_id, task_date, tour_code, task_ref, score, comment') } catch { rt = [] } } // table absente tant que la migration n'est pas lancée
       setTours(t); setLabels(l); setRatings(rt)
     } catch (e) { setError(e.message || String(e)) }
     setLoading(false)
@@ -57,7 +58,7 @@ export default function DashboardTransport() {
 
   const stats = useMemo(() => {
     const sup = {}
-    const get = k => (sup[k] = sup[k] || { name: k, withSlot: 0, depRetard: 0, arrRetard: 0, expected: 0, notBack: 0, parcels: 0, ratingSum: 0, ratingN: 0, lateDep: [], lateArr: [], notBackList: [], parcelList: [], parcelsTotal: 0 })
+    const get = k => (sup[k] = sup[k] || { name: k, withSlot: 0, depRetard: 0, arrRetard: 0, expected: 0, notBack: 0, parcels: 0, ratingSum: 0, ratingN: 0, stars1: [], lateDep: [], lateArr: [], notBackList: [], parcelList: [], parcelsTotal: 0 })
     const supplierOf = new Map() // `${jour}|${code}` -> fournisseur
     const dayOfTour = t => t.delivery_dates?.delivery_date
     const codeOf = t => t.tours_references?.name || t.name
@@ -87,7 +88,7 @@ export default function DashboardTransport() {
       const s = get(sName)
       s.parcels++; s.parcelList.push({ day: l.task_date, code: l.tour_code || '—', bp: l.barcode })
     }
-    for (const x of ratings) { const n = supplierOf.get(`${x.task_date}|${x.tour_code}`); if (n) { const r = get(n); r.ratingSum += Number(x.score); r.ratingN++ } }
+    for (const x of ratings) { const n = supplierOf.get(`${x.task_date}|${x.tour_code}`); if (n) { const r = get(n); r.ratingSum += Number(x.score); r.ratingN++; if (Number(x.score) <= 1) r.stars1.push({ day: x.task_date, code: x.tour_code, ref: x.task_ref, bps: x.barcodes || [], comment: x.comment }) } }
     const rows = Object.values(sup)
     const ratio = (a, b) => (b ? a / b : null)
     for (const r of rows) r.ratios = [ratio(r.depRetard, r.withSlot), ratio(r.arrRetard, r.withSlot), ratio(r.notBack, r.expected), ratio(r.parcels, r.parcelsTotal)]
@@ -159,6 +160,7 @@ export default function DashboardTransport() {
                     <div style={{ fontSize: 18, fontWeight: 800 }}>{r.name}</div>
                     <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>score qualité /100</div>
                     {r.ratingN > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginTop: 2 }}>★ {(r.ratingSum / r.ratingN).toFixed(1).replace('.', ',')} / 5 · {r.ratingN} avis clients</div>}
+                    {r.stars1.length > 0 && <button type="button" onClick={() => setOpen(open && open.n === r.name && open.k === 'star' ? null : { n: r.name, k: 'star' })} aria-expanded={!!(open && open.n === r.name && open.k === 'star')} style={{ marginTop: 4, background: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: 999, padding: '2px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{r.stars1.length} avis à 1 étoile</button>}
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -170,11 +172,12 @@ export default function DashboardTransport() {
                       <div style={{ fontSize: 11, opacity: .8 }}>{n} / {tot}</div>
                     </button>) })}
                 </div>
-                {open && open.n === r.name && (() => { const list = { dep: r.lateDep, arr: r.lateArr, nb: r.notBackList, pc: r.parcelList }[open.k]; return list && list.length ? (
+                {open && open.n === r.name && (() => { const list = { dep: r.lateDep, arr: r.lateArr, nb: r.notBackList, pc: r.parcelList, star: r.stars1 }[open.k]; return list && list.length ? (
                   <div style={{ marginTop: 12, padding: 10, background: 'var(--gray-50, #f9fafb)', borderRadius: 8, fontSize: 12, maxHeight: 220, overflow: 'auto' }}>
                     {open.k === 'dep' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, départ {x.real} (+{x.d} min)</div>)}
                     {open.k === 'arr' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, premier scan {x.real} (+{x.d} min)</div>)}
                     {open.k === 'nb' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : {x.back}</div>)}
+                    {open.k === 'star' && list.map((x, i) => <div key={i} style={{ marginBottom: 6 }}>{fr(x.day)} — <b>{x.code}</b> · tâche {x.ref || '—'}{x.bps.length ? <> · BP : {x.bps.join(', ')}</> : null}{x.comment ? <div style={{ color: 'var(--gray-500)', fontStyle: 'italic' }}>« {x.comment} »</div> : null}</div>)}
                     {open.k === 'pc' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : BP {x.bp}</div>)}
                   </div>) : null })()}
               </div>
