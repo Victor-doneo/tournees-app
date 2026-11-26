@@ -112,6 +112,7 @@ export default function App() {
         <Route path="defaillances" element={<Defaillances />} />
         <Route path="search-parcel" element={<SearchParcel />} />
         <Route path="suivi-tournees" element={<TrackingRoute><SuiviTournees readOnly /></TrackingRoute>} />
+        <Route path="dashboard-transport" element={<TrackingRoute><DashboardTransport /></TrackingRoute>} />
         <Route path="plan-chargement" element={<LoadingPlanRoute><PlanChargement /></LoadingPlanRoute>} />
         <Route path="destinataires-plan" element={<LoadingPlanRoute><EmailRecipients only="plan" /></LoadingPlanRoute>} />
       </Route>
