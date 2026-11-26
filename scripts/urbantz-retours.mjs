@@ -161,14 +161,15 @@ if (process.env.DEBUG_NOTIF && firstReq) {
       console.log(`DEBUG NOTIF ${path} -> HTTP ${resp.status()}, ${txt.length} car. | ${txt.slice(0, 160).replace(/\s+/g, ' ')} | enquête : ${JSON.stringify(hits.slice(0, 8))}`)
     } catch (e) { console.log(`DEBUG NOTIF ${path} : erreur ${e.message}`) }
   }
-  // /notifications existe (HTTP 400 = paramètre attendu) : message complet puis variantes de paramètres
-  for (const q of ['', `?task=${tid}`, `?taskId=${tid}`, `?tasks=${tid}`, `?id=${tid}`, `?entityId=${tid}`, `?resource=${tid}`, `?target=${tid}`, `?task=${t?.taskId}`, `?taskId=${t?.taskId}`, `?objectId=${tid}`, `?type=task&id=${tid}`, `?entity=task&entityId=${tid}`, `?resourceType=task&resourceId=${tid}`]) {
-    try {
-      const resp = await page.context().request.get(base + '/notifications' + q, { headers })
-      const txt = await resp.text(); const hits = []; try { grep(JSON.parse(txt), '', hits) } catch {}
-      console.log(`DEBUG NOTIF /notifications${q} -> HTTP ${resp.status()}, ${txt.length} car. | ${txt.slice(0, 700).replace(/\s+/g, ' ')} | enquête : ${JSON.stringify(hits.slice(0, 6))}`)
-    } catch (e) { console.log(`DEBUG NOTIF /notifications${q} : erreur ${e.message}`) }
-  }
+  // /notifications exige taskId (24 hex) + platformId
+  try {
+    const resp = await page.context().request.get(`${base}/notifications?taskId=${tid}&platformId=${t?.platform}`, { headers })
+    const txt = await resp.text()
+    console.log(`DEBUG NOTIF /notifications OK? HTTP ${resp.status()}, ${txt.length} car.`)
+    const i = txt.search(/EnqueteGlobale/i)
+    console.log('DEBUG NOTIF début :', txt.slice(0, 900).replace(/\s+/g, ' '))
+    console.log('DEBUG NOTIF autour de EnqueteGlobale :', i >= 0 ? txt.slice(Math.max(0, i - 500), i + 300).replace(/\s+/g, ' ') : 'absent')
+  } catch (e) { console.log('DEBUG NOTIF /notifications : erreur ' + e.message) }
   // appels réseau émis par la page de la tâche ouverte dans l'interface
   const seen = []
   page.on('response', r => { const u = r.url(); if (/urbantz/.test(u) && ['xhr', 'fetch'].includes(r.request().resourceType())) seen.push(u.replace(/^https?:\/\/[^/]+/, '')) })
