@@ -142,6 +142,14 @@ export default function PlanChargement() {
     } catch (e) { toast.error('Erreur : ' + e.message) } finally { setSending(false) }
   }
 
+  // Enregistre les créneaux du plan affiché sans envoyer de mail (visibles dans « Suivi des tournées »)
+  async function saveSlots() {
+    if (!plan.length) return
+    const results = await Promise.all(plan.map(t => supabase.from('tours').update({ loading_slot: fmtMin(t.slot) }).eq('id', t.id)))
+    if (results.some(r => r.error)) toast.error('Créneaux non enregistrés (migration supabase_migration_loading_slot.sql lancée ?)')
+    else toast.success(`Créneaux enregistrés pour ${plan.length} tournées`)
+  }
+
   async function copyTable() {
     const head = ['', ...QUAIS.map(q => `QUAI ${q}`)]
     const lines = slots.map(s => [fmtMin(s), ...QUAIS.map(q => cell(s, q).map(t => t.name).join(' / '))])
@@ -196,6 +204,7 @@ export default function PlanChargement() {
           <button className="btn btn-secondary btn-sm" onClick={fetchUrbantz} disabled={fetchingUrbantz || !date} title="Lit dans Urbantz les heures d'arrivée prévues de cette journée">
             {fetchingUrbantz ? <><div className="spinner" /> Récupération…</> : <><Upload size={14} /> Récupérer les heures Urbantz</>}
           </button>
+          <button className="btn btn-secondary btn-sm" onClick={saveSlots} disabled={!plan.length} title="Enregistre les créneaux pour le suivi des tournées, sans envoyer de mail">Enregistrer les créneaux</button>
           <button className="btn btn-primary btn-sm" onClick={copyTable} disabled={!plan.length}><Copy size={14} /> Copier le tableau</button>
           <button className="btn btn-primary btn-sm" onClick={sendMail} disabled={!plan.length || sending}>{sending ? <><div className="spinner" /> Envoi...</> : <><Send size={14} /> Envoyer par mail</>}</button>
         </div>
