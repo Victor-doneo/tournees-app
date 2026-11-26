@@ -143,7 +143,7 @@ await browser.close()
   const byRound = new Map()
   for (const t of tasks.values()) { const c = matchCode(t.roundName); if (c) { if (!byRound.has(c)) byRound.set(c, []); byRound.get(c).push(t) } }
   const sec = w => new Date(w).toISOString().slice(0, 19)
-  const departs = new Map()
+  const departs = new Map(), scans = new Map()
   for (const [code, ts] of byRound) {
     const entries = t => [...(Array.isArray(t.log) ? t.log : []), ...(t.items || []).flatMap(i => Array.isArray(i.log) ? i.log : [])].filter(e => e && e.when)
     const named = ts.flatMap(entries).filter(e => /depart/i.test(JSON.stringify(e)))
@@ -155,9 +155,21 @@ await browser.close()
       when = shared.length ? shared[shared.length - 1] + 'Z' : null; how = 'dernier événement commun'
     }
     if (when) departs.set(code, { when, how })
+    // Premier scan : première action « to progress ASSIGNED / status PREPARED » du jour parmi les journaux de toutes les tâches de la tournée
+    const dayOf = w => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date(w))
+    const all = ts.flatMap(entries)
+    const prep = all.filter(e => { const to = JSON.stringify(e.to || e.new || e); return /ASSIGNED/.test(to) && /PREPARED/.test(to) && dayOf(e.when) === day })
+    scans.set(code, { when: prep.length ? prep.map(e => e.when).sort()[0] : null, n: all.length })
   }
   const hm = w => new Date(w).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' })
   console.log(`Départs dépôt Urbantz : ${departs.size}/${byRound.size} tournées`, [...departs].slice(0, 6).map(([c, d]) => `${c} ${hm(d.when)} (${d.how})`).join(', '))
+  const okScans = [...scans].filter(([, v]) => v.when)
+  console.log(`Premiers scans Urbantz : ${okScans.length}/${byRound.size} tournées (entrées de journal lues : ${[...scans.values()].reduce((a, v) => a + v.n, 0)})`, okScans.slice(0, 6).map(([c, v]) => `${c} ${hm(v.when)}`).join(', '))
+  if (!DRY_RUN && dRow && okScans.length) {
+    const { data: trs2, error: e2 } = await sb.from('tours').select('id, name, urbantz_premier_scan, tours_references(name)').eq('delivery_date_id', dRow.id)
+    if (e2) console.log('Premiers scans non enregistrés (migration supabase_migration_premier_scan.sql lancée ?)')
+    else for (const t of trs2 || []) { const v = scans.get(t.tours_references?.name || t.name); if (v?.when && !t.urbantz_premier_scan) await sb.from('tours').update({ urbantz_premier_scan: v.when }).eq('id', t.id) }
+  }
   if (!DRY_RUN && dRow && departs.size) {
     const { data: trs } = await sb.from('tours').select('id, name, urbantz_depart_reel, tours_references(name)').eq('delivery_date_id', dRow.id)
     if (trs) for (const t of trs) { const d = departs.get(t.tours_references?.name || t.name); if (d && !t.urbantz_depart_reel) await sb.from('tours').update({ urbantz_depart_reel: d.when }).eq('id', t.id) }
