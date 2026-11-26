@@ -109,21 +109,6 @@ export default function DashboardTransport() {
       {sub && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{sub}</div>}
     </div>
   )
-  const detail = (r, kind) => {
-    const lists = { dep: r.lateDep, arr: r.lateArr, nb: r.notBackList, pc: r.parcelList }
-    const list = lists[kind]
-    if (!list.length) return null
-    return (
-      <tr><td colSpan={7} style={{ background: 'var(--gray-50, #f9fafb)', padding: '8px 16px', fontSize: 12 }}>
-        {kind === 'dep' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, départ {x.real} (+{x.d} min)</div>)}
-        {kind === 'arr' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, premier scan {x.real} (+{x.d} min)</div>)}
-        {kind === 'nb' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : {x.back}</div>)}
-        {kind === 'pc' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : BP {x.bp}</div>)}
-      </td></tr>
-    )
-  }
-  const cellBtn = (r, kind, n, red, p, tot) => <td style={{ textAlign: 'right', whiteSpace: 'nowrap', padding: '6px', fontSize: 13 }}>{n ? <button className="btn btn-ghost btn-sm" style={{ color: red ? 'var(--red)' : undefined, fontWeight: 700 }} onClick={() => setOpen(open && open.n === r.name && open.k === kind ? null : { n: r.name, k: kind })}>{n}<span style={{ fontWeight: 500, color: 'var(--gray-500)' }}> / {tot} · {p}</span></button> : <span style={{ color: 'var(--gray-400)' }}>0 / {tot} · {p}</span>}</td>
-
   return (
     <>
       <div className="page-header">
@@ -144,25 +129,52 @@ export default function DashboardTransport() {
           <Card icon={<Truck size={14} />} label="Non rentrées le jour même" value={pct(stats.tot.notBack, stats.tot.expected)} sub={`${stats.tot.notBack} sur ${stats.tot.expected} tournées attendues`} />
           <Card icon={<PackageX size={14} />} label="Colis en attente de rapatriement" value={stats.tot.parcels} sub="depuis le 16/11 · hors réceptionnés REFLEX et livrés" color={stats.tot.parcels ? 'var(--orange, #d97706)' : undefined} />
         </div>
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <div className="table-wrapper"><table>
-            <thead><tr><th style={{ textAlign: 'center', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Rang</th><th style={{ textAlign: 'center', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Score<br/>qualité</th><th style={{ textAlign: 'left', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Fournisseur</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Départs en retard<br/>(&gt; 1 h)</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Arrivées en retard<br/>(&gt; 10 min)</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Non rentrées<br/>le jour même</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Colis à<br/>rapatrier</th></tr></thead>
-            <tbody>
-              {stats.rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--gray-400)' }}>Aucune tournée sur la période</td></tr>}
-              {stats.rows.map(r => [
-                <tr key={r.name}>
-                  <td style={{ textAlign: 'center', fontWeight: 800, padding: '6px' }}>{r.rank ?? '—'}</td>
-                  <td style={{ textAlign: 'center', padding: '6px' }}>{r.quality == null ? '—' : <span className="badge" style={{ background: r.quality >= 90 ? '#dcfce7' : r.quality >= 75 ? '#fef3c7' : '#fee2e2', color: r.quality >= 90 ? '#166534' : r.quality >= 75 ? '#92400e' : '#991b1b', fontWeight: 800 }}>{r.quality}</span>}</td>
-                  <td style={{ fontWeight: 700, padding: '6px' }}>{r.name}</td>
-                  {cellBtn(r, 'dep', r.depRetard, true, pct(r.depRetard, r.withSlot), r.withSlot)}
-                  {cellBtn(r, 'arr', r.arrRetard, true, pct(r.arrRetard, r.withSlot), r.withSlot)}
-                  {cellBtn(r, 'nb', r.notBack, true, pct(r.notBack, r.expected), r.expected)}
-                  {cellBtn(r, 'pc', r.parcels, true, pct(r.parcels, r.parcelsTotal), r.parcelsTotal)}
-                </tr>,
-                open && open.n === r.name ? <Fragment2 key={r.name + 'd'}>{detail(r, open.k)}</Fragment2> : null,
-              ])}
-            </tbody>
-          </table></div>
+        {stats.rows.length === 0 && <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--gray-400)' }}>Aucune tournée sur la période</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+          {stats.rows.map(r => {
+            const q = r.quality
+            const qc = q == null ? '#9ca3af' : q >= 90 ? '#12834F' : q >= 75 ? '#E0A100' : '#C0392B'
+            const C = 2 * Math.PI * 34
+            const pills = [
+              ['dep', 'Départs en retard', r.depRetard, r.withSlot, r.ratios[0]],
+              ['arr', 'Arrivées en retard', r.arrRetard, r.withSlot, r.ratios[1]],
+              ['nb', 'Non rentrées', r.notBack, r.expected, r.ratios[2]],
+              ['pc', 'Colis à rapatrier', r.parcels, r.parcelsTotal, r.ratios[3]],
+            ]
+            const pc = v => v == null ? ['#f3f4f6', '#6b7280'] : v === 0 ? ['#dcfce7', '#166534'] : v < 0.15 ? ['#fef3c7', '#92400e'] : ['#fee2e2', '#991b1b']
+            return (
+              <div key={r.name} className="card" style={{ padding: 18 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+                  <svg width="84" height="84" viewBox="0 0 84 84" role="img" aria-label={`Score qualité ${q ?? 'non calculé'}`}>
+                    <circle cx="42" cy="42" r="34" fill="none" stroke="#eef0f3" strokeWidth="9" />
+                    {q != null && <circle cx="42" cy="42" r="34" fill="none" stroke={qc} strokeWidth="9" strokeLinecap="round" strokeDasharray={`${C * q / 100} ${C}`} transform="rotate(-90 42 42)" />}
+                    <text x="42" y="49" textAnchor="middle" fontSize="22" fontWeight="800" fill="#14181F">{q ?? '—'}</text>
+                  </svg>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)' }}>{r.rank ? (r.rank === 1 ? '1er' : `${r.rank}e`) : '—'}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800 }}>{r.name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>score qualité /100</div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {pills.map(([k, label, n, tot, v]) => { const [bg, fg] = pc(v); const isOpen = open && open.n === r.name && open.k === k; return (
+                    <button key={k} type="button" disabled={!n} onClick={() => setOpen(isOpen ? null : { n: r.name, k })} aria-expanded={isOpen}
+                      style={{ background: bg, color: fg, border: isOpen ? `2px solid ${fg}` : '2px solid transparent', borderRadius: 12, padding: '10px 12px', textAlign: 'left', cursor: n ? 'pointer' : 'default', font: 'inherit' }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>{pct(n, tot)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700 }}>{label}</div>
+                      <div style={{ fontSize: 11, opacity: .8 }}>{n} / {tot}</div>
+                    </button>) })}
+                </div>
+                {open && open.n === r.name && (() => { const list = { dep: r.lateDep, arr: r.lateArr, nb: r.notBackList, pc: r.parcelList }[open.k]; return list && list.length ? (
+                  <div style={{ marginTop: 12, padding: 10, background: 'var(--gray-50, #f9fafb)', borderRadius: 8, fontSize: 12, maxHeight: 220, overflow: 'auto' }}>
+                    {open.k === 'dep' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, départ {x.real} (+{x.d} min)</div>)}
+                    {open.k === 'arr' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, premier scan {x.real} (+{x.d} min)</div>)}
+                    {open.k === 'nb' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : {x.back}</div>)}
+                    {open.k === 'pc' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : BP {x.bp}</div>)}
+                  </div>) : null })()}
+              </div>
+            )
+          })}
         </div>
         <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 10, lineHeight: 1.5 }}>
           <AlertTriangle size={12} style={{ verticalAlign: -2 }} /> Les retards se calculent sur les tournées dont le créneau a été enregistré (envoi ou « Enregistrer les créneaux » du plan de chargement) et dont l'heure Urbantz est connue. « Non rentrées le jour même » compte les jours passés (hors week-end) où la tournée avait des colis à retourner. Les colis en attente excluent ceux réceptionnés dans REFLEX ou livrés. Les pourcentages sont : départs et arrivées en retard sur les tournées avec créneau, non rentrées sur les tournées attendues, colis à rapatrier sur les colis à retourner (depuis le 16/11). Score qualité (sur 100) = 100 moins la moyenne pondérée de ces quatre pourcentages (départs en retard 25 %, arrivées en retard 25 %, non rentrées 30 %, colis à rapatrier 20 %) ; le classement va du meilleur score au moins bon. Les tournées non reconnues sont signalées dans « Tournées de référence ».
@@ -173,4 +185,3 @@ export default function DashboardTransport() {
   )
 }
 
-const Fragment2 = ({ children }) => children
