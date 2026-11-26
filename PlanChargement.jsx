@@ -125,6 +125,16 @@ export default function PlanChargement() {
     return `<table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:11pt"><tr>${head.map(h => `<th ${th}>${h}</th>`).join('')}</tr>${lines.map(r => `<tr>${r.map(c => `<td ${td}>${c}</td>`).join('')}</tr>`).join('')}</table>`
   }
 
+  // Enregistre loading_slot via une fonction SQL (un partenaire n'a que la lecture sur tours) ; repli : update direct, avec contrôle du nombre de lignes
+  async function persistSlots() {
+    const payload = plan.map(t => ({ id: t.id, slot: fmtMin(t.slot) }))
+    const { data, error } = await supabase.rpc('save_loading_slots', { slots: payload })
+    if (!error) return data === payload.length ? { ok: true } : { ok: false, msg: `${data}/${payload.length} tournées mises à jour` }
+    const res = await Promise.all(plan.map(t => supabase.from('tours').update({ loading_slot: fmtMin(t.slot) }).eq('id', t.id).select('id')))
+    const bad = res.filter(r => r.error || !r.data?.length).length
+    return bad ? { ok: false, msg: `${error.message} — lancer supabase_migration_loading_slot_rpc.sql` } : { ok: true }
+  }
+
   async function sendMail() {
     if (!date || !plan.length) return
     const [y, m, d] = date.delivery_date.split('-')
@@ -144,8 +154,8 @@ export default function PlanChargement() {
       if (res.ok) {
         toast.success(`Plan envoyé à ${out.sent_to} destinataire(s)`)
         // Le créneau de chaque tournée est conservé (affiché dans « Suivi des tournées » : Heure de chargement)
-        const results = await Promise.all(plan.map(t => supabase.from('tours').update({ loading_slot: fmtMin(t.slot) }).eq('id', t.id)))
-        if (results.some(r => r.error)) toast.error('Créneaux non enregistrés (migration supabase_migration_loading_slot.sql lancée ?)')
+        const r = await persistSlots()
+        if (!r.ok) toast.error('Créneaux non enregistrés : ' + r.msg)
       }
       else toast.error(out.error || 'Envoi impossible')
     } catch (e) { toast.error('Erreur : ' + e.message) } finally { setSending(false) }
@@ -154,8 +164,8 @@ export default function PlanChargement() {
   // Enregistre les créneaux du plan affiché sans envoyer de mail (visibles dans « Suivi des tournées »)
   async function saveSlots() {
     if (!plan.length) return
-    const results = await Promise.all(plan.map(t => supabase.from('tours').update({ loading_slot: fmtMin(t.slot) }).eq('id', t.id)))
-    if (results.some(r => r.error)) toast.error('Créneaux non enregistrés (migration supabase_migration_loading_slot.sql lancée ?)')
+    const r = await persistSlots()
+    if (!r.ok) toast.error('Créneaux non enregistrés : ' + r.msg)
     else toast.success(`Créneaux enregistrés pour ${plan.length} tournées`)
   }
 
