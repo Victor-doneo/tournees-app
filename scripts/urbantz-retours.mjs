@@ -142,6 +142,34 @@ try {
   await browser.close()
   throw e
 }
+// Diagnostic note client : DEBUG_NOTIF=1 [DEBUG_TASK=<id ou n° de tâche>] -> cherche où Urbantz expose l'enquête de satisfaction (onglet Communications)
+if (process.env.DEBUG_NOTIF && firstReq) {
+  const headers = Object.fromEntries(Object.entries(firstReq.headers).filter(([k]) => !/^(host|content-length|connection|accept-encoding)$/i.test(k) && !k.startsWith(':')))
+  const base = firstReq.url.split(/\/tasks?(\?|$)/)[0]
+  const all = [...tasks.values()]
+  const want = process.env.DEBUG_TASK
+  const t = (want && all.find(x => [x._id, x.id, x.taskId, x.number].some(v => v && String(v).includes(want)))) || all.find(x => /DELIVERED|COMPLETED/i.test(JSON.stringify(x.log || []))) || all[0]
+  const tid = t?._id || t?.id
+  console.log(`DEBUG NOTIF tâche ${tid} (${t?.taskId || t?.number || ''}) | clés : ${Object.keys(t || {}).join(',').slice(0, 600)}`)
+  const grep = (o, pa, out) => { if (o == null) return; if (typeof o === 'string') { if (/survey|enqu[eê]te|satisf|rating|note/i.test(pa + ' ' + o)) out.push(`${pa}=${o.slice(0, 80)}`) } else if (typeof o === 'object') for (const [k, v] of Object.entries(o)) grep(v, pa + '.' + k, out) }
+  const own = []; grep(t, '', own); console.log('DEBUG NOTIF champs « enquête » dans la tâche de la liste :', JSON.stringify(own.slice(0, 15)))
+  for (const path of [`/task/${tid}`, `/task/${tid}/notifications`, `/task/${tid}/communications`, `/task/${tid}/timeline`, `/task/${tid}/messages`, `/notification?task=${tid}`, `/notifications?task=${tid}`, `/notification?taskId=${tid}`, `/communication?task=${tid}`, `/message?task=${tid}`, `/survey?task=${tid}`]) {
+    try {
+      const resp = await page.context().request.get(base + path, { headers })
+      const txt = await resp.text()
+      const hits = []; try { grep(JSON.parse(txt), '', hits) } catch {}
+      console.log(`DEBUG NOTIF ${path} -> HTTP ${resp.status()}, ${txt.length} car. | ${txt.slice(0, 160).replace(/\s+/g, ' ')} | enquête : ${JSON.stringify(hits.slice(0, 8))}`)
+    } catch (e) { console.log(`DEBUG NOTIF ${path} : erreur ${e.message}`) }
+  }
+  // appels réseau émis par la page de la tâche ouverte dans l'interface
+  const seen = []
+  page.on('response', r => { const u = r.url(); if (/urbantz/.test(u) && ['xhr', 'fetch'].includes(r.request().resourceType())) seen.push(u.replace(/^https?:\/\/[^/]+/, '')) })
+  try {
+    await page.goto(`https://web.urbantz.com/dashboard/tasks?taskId=${tid}`, { waitUntil: 'domcontentloaded' }); await page.waitForTimeout(6000)
+    await page.getByText(/communications/i).first().click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(4000)
+    console.log('DEBUG NOTIF appels de la page tâche :', JSON.stringify([...new Set(seen)].filter(u => !/launchdarkly|sentry|amplitude/.test(u)).slice(0, 40)))
+  } catch (e) { console.log('DEBUG NOTIF page tâche : ' + e.message) }
+}
 await browser.close()
 
 // Heure de départ réelle du dépôt par tournée : événement « départ » du journal des colis (identique sur tous les colis d'une tournée)
