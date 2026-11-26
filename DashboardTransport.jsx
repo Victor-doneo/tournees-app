@@ -91,12 +91,16 @@ export default function DashboardTransport() {
     for (const x of ratings) { const n = supplierOf.get(`${x.task_date}|${x.tour_code}`); if (n) { const r = get(n); r.ratingSum += Number(x.score); r.ratingN++; if (Number(x.score) <= 1) r.stars1.push({ day: x.task_date, code: x.tour_code, ref: x.task_ref, bps: x.barcodes || [], comment: x.comment }) } }
     const rows = Object.values(sup)
     const ratio = (a, b) => (b ? a / b : null)
-    for (const r of rows) r.ratios = [ratio(r.depRetard, r.withSlot), ratio(r.arrRetard, r.withSlot), ratio(r.notBack, r.expected), ratio(r.parcels, r.parcelsTotal)]
+    for (const r of rows) {
+      r.ratios = [ratio(r.depRetard, r.withSlot), ratio(r.arrRetard, r.withSlot), ratio(r.notBack, r.expected), ratio(r.parcels, r.parcelsTotal)]
+      // défauts du score : part d'avis à 1 étoile (20 % d'avis à 1 étoile = défaut maximal) et écart de la note moyenne à 5
+      r.scoreDefects = [...r.ratios, r.ratingN ? Math.min(r.stars1.length / r.ratingN / 0.2, 1) : null, r.ratingN ? (5 - r.ratingSum / r.ratingN) / 4 : null]
+    }
     // Score qualité /100 = 100 × (1 − moyenne pondérée des 4 proportions de défaut) ; une proportion sans donnée est ignorée
-    const W = [25, 25, 30, 20] // départs en retard, arrivées en retard, non rentrées, colis à rapatrier
+    const W = [30, 15, 15, 10, 20, 10] // départs en retard, arrivées en retard, non rentrées, colis à rapatrier, avis à 1 étoile, note moyenne
     for (const r of rows) {
       let w = 0, acc = 0
-      r.ratios.forEach((v, i) => { if (v != null) { w += W[i]; acc += W[i] * Math.min(v, 1) } })
+      r.scoreDefects.forEach((v, i) => { if (v != null) { w += W[i]; acc += W[i] * Math.min(v, 1) } })
       r.quality = w ? Math.round(100 * (1 - acc / w)) : null
       r.score = r.quality == null ? Infinity : -r.quality
     }
@@ -185,7 +189,7 @@ export default function DashboardTransport() {
           })}
         </div>
         <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 10, lineHeight: 1.5 }}>
-          <AlertTriangle size={12} style={{ verticalAlign: -2 }} /> Les retards se calculent sur les tournées dont le créneau a été enregistré (envoi ou « Enregistrer les créneaux » du plan de chargement) et dont l'heure Urbantz est connue. « Non rentrées le jour même » compte les jours passés (hors week-end) où la tournée avait des colis à retourner. Les colis en attente excluent ceux réceptionnés dans REFLEX ou livrés. Les pourcentages sont : départs et arrivées en retard sur les tournées avec créneau, non rentrées sur les tournées attendues, colis à rapatrier sur les colis à retourner (depuis le 16/11). Score qualité (sur 100) = 100 moins la moyenne pondérée de ces quatre pourcentages (départs en retard 25 %, arrivées en retard 25 %, non rentrées 30 %, colis à rapatrier 20 %) ; le classement va du meilleur score au moins bon. Les tournées non reconnues sont signalées dans « Tournées de référence ».
+          <AlertTriangle size={12} style={{ verticalAlign: -2 }} /> Les retards se calculent sur les tournées dont le créneau a été enregistré (envoi ou « Enregistrer les créneaux » du plan de chargement) et dont l'heure Urbantz est connue. « Non rentrées le jour même » compte les jours passés (hors week-end) où la tournée avait des colis à retourner. Les colis en attente excluent ceux réceptionnés dans REFLEX ou livrés. Les pourcentages sont : départs et arrivées en retard sur les tournées avec créneau, non rentrées sur les tournées attendues, colis à rapatrier sur les colis à retourner (depuis le 16/11). Score qualité (sur 100) = 100 moins la moyenne pondérée de six défauts : départs en retard 30 %, arrivées en retard 15 %, non rentrées 15 %, colis à rapatrier 10 %, avis à 1 étoile 20 % (20 % d'avis à 1 étoile = défaut maximal), note client moyenne 10 % (5/5 = aucun défaut). Un critère sans donnée est ignoré ; le classement va du meilleur score au moins bon. Les tournées non reconnues sont signalées dans « Tournées de référence ».
         </p>
       </>}
       </div>
