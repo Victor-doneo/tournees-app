@@ -142,7 +142,7 @@ export default function DashboardTransport() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16 }}>
           {stats.rows.map(r => {
             const q = r.quality
-            const qc = q == null ? '#9ca3af' : q >= 90 ? '#12834F' : q >= 75 ? '#E0A100' : '#C0392B'
+            const qc = q == null ? '#9ca3af' : q >= 90 ? '#12834F' : q >= 80 ? '#E0C000' : q >= 70 ? '#EA7A10' : '#C0392B'
             const C = 2 * Math.PI * 34
             const pills = [
               ['dep', 'Départs en retard', r.depRetard, r.withSlot, r.ratios[0]],
@@ -189,7 +189,7 @@ export default function DashboardTransport() {
           })}
         </div>
         <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 10, lineHeight: 1.5 }}>
-          <AlertTriangle size={12} style={{ verticalAlign: -2 }} /> Les retards se calculent sur les tournées dont le créneau a été enregistré (envoi ou « Enregistrer les créneaux » du plan de chargement) et dont l'heure Urbantz est connue. « Non rentrées le jour même » compte les jours passés (hors week-end) où la tournée avait des colis à retourner. Les colis en attente excluent ceux réceptionnés dans REFLEX ou livrés. Les pourcentages sont : départs et arrivées en retard sur les tournées avec créneau, non rentrées sur les tournées attendues, colis à rapatrier sur les colis à retourner (depuis le 16/11). Score qualité (sur 100) = 100 moins la moyenne pondérée de six défauts : départs en retard 30 %, arrivées en retard 15 %, non rentrées 15 %, colis à rapatrier 10 %, avis à 1 étoile 20 % (20 % d'avis à 1 étoile = défaut maximal), note client moyenne 10 % (5/5 = aucun défaut). Un critère sans donnée est ignoré ; le classement va du meilleur score au moins bon. Les tournées non reconnues sont signalées dans « Tournées de référence ».
+          <AlertTriangle size={12} style={{ verticalAlign: -2 }} /> Les retards se calculent sur les tournées dont le créneau a été enregistré (envoi ou « Enregistrer les créneaux » du plan de chargement) et dont l'heure Urbantz est connue. « Non rentrées le jour même » compte les jours passés (hors week-end) où la tournée avait des colis à retourner. Les colis en attente excluent ceux réceptionnés dans REFLEX ou livrés. Les pourcentages sont : départs et arrivées en retard sur les tournées avec créneau, non rentrées sur les tournées attendues, colis à rapatrier sur les colis à retourner (depuis le 16/11). Score qualité (sur 100) = 100 moins la moyenne pondérée de six défauts : départs en retard 30 %, arrivées en retard 15 %, non rentrées 15 %, colis à rapatrier 10 %, avis à 1 étoile 20 % (20 % d'avis à 1 étoile = défaut maximal), note client moyenne 10 % (5/5 = aucun défaut). Un critère sans donnée est ignoré ; le classement va du meilleur score au moins bon. Couleur de l'anneau : vert à partir de 90, jaune de 80 à 89, orange de 70 à 79, rouge en dessous de 70. Les tournées non reconnues sont signalées dans « Tournées de référence ».
         </p>
       </>}
       </div>
