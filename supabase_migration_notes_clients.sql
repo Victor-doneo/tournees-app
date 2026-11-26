@@ -15,3 +15,21 @@ create policy "dr_read" on public.delivery_ratings for select using (public.has_
 
 -- Codes-barres (BP) de la tâche, pour retrouver les colis d'une mauvaise note
 alter table public.delivery_ratings add column if not exists barcodes text[];
+
+-- Demande « NPS » créée pour les avis de 1 ou 2 étoiles (une seule par tâche)
+alter table public.delivery_ratings add column if not exists demande_id uuid;
+do $$
+declare c record;
+begin
+  for c in
+    select conname from pg_constraint
+    where conrelid = 'public.demandes'::regclass and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%securisation%'
+      and pg_get_constraintdef(oid) not ilike '%array_length%'
+  loop
+    execute format('alter table public.demandes drop constraint %I', c.conname);
+  end loop;
+  alter table public.demandes add constraint demandes_type_check
+    check (type in ('securisation','ajout_non_planifie','ajout_non_planifie_retour','recherche_colis','reception_reflex','nps','autre'));
+end $$;
+-- Si le type est un enum, lancer seul : alter type demande_type add value if not exists 'nps';

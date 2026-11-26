@@ -6,7 +6,7 @@ import { useAuth } from './AuthContext'
 import { useDemandeNotifications, markDemandeRead, markAllDemandesRead, fetchRecentNotifications } from './demandeNotifications'
 import toast from 'react-hot-toast'
 import {
-  Plus, X, Package, ShieldAlert, PackagePlus, Search, MessageSquare,
+  Plus, X, Star, Package, ShieldAlert, PackagePlus, Search, MessageSquare,
   CheckCircle2, Send, ClipboardList, Paperclip, Bell,
 } from 'lucide-react'
 
@@ -18,6 +18,7 @@ export const TYPES = {
   ajout_non_planifie: { label: 'Ajout non planifié dans une tournée', badge: 'badge-orange', icon: PackagePlus },
   ajout_non_planifie_retour: { label: 'Ajout non planifié en retour', badge: 'badge-purple', icon: PackagePlus },
   reception_reflex: { label: 'Réception REFLEX à réaliser', badge: 'badge-orange', icon: PackagePlus },
+  nps: { label: 'NPS', badge: 'badge-red', icon: Star },
   recherche_colis: { label: 'Recherche de colis', badge: 'badge-blue', icon: Search },
   autre: { label: 'Autres demandes', badge: 'badge-gray', icon: MessageSquare },
 }

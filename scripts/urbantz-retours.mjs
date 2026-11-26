@@ -233,7 +233,31 @@ await browser.close()
     let { error: re } = await sb.from('delivery_ratings').upsert(ratings, { onConflict: 'task_id' })
     if (re && /barcodes/.test(re.message)) ({ error: re } = await sb.from('delivery_ratings').upsert(ratings.map(({ barcodes, ...r }) => r), { onConflict: 'task_id' })) // colonne barcodes absente
     if (re) console.log('Notes clients non enregistrées (migration supabase_migration_notes_clients.sql lancée ?) :', re.message)
-    else console.log(`Notes clients enregistrées : ${ratings.length} (dont ${ratings.filter(r => r.score <= 1).length} à 1 étoile)`)
+    // Avis de 1 ou 2 étoiles : une demande « NPS » affectée au partenaire, avec les BP de la tâche (une seule par tâche)
+    if (!re) {
+      const bad = ratings.filter(r => r.score <= 2)
+      if (bad.length) {
+        const { data: ex, error: exe } = await sb.from('delivery_ratings').select('task_id, demande_id').in('task_id', bad.map(r => r.task_id))
+        if (exe) console.log('Demandes NPS : colonne demande_id absente (migration supabase_migration_notes_clients.sql à relancer) :', exe.message)
+        else {
+          const done0 = new Set((ex || []).filter(x => x.demande_id).map(x => x.task_id))
+          const creator = process.env.DEMANDE_USER_ID || (await sb.from('users').select('id').eq('role', 'admin').limit(1)).data?.[0]?.id
+          let n = 0
+          for (const r of bad) {
+            if (done0.has(r.task_id) || !creator) continue
+            const row = { type: 'nps', bp: r.barcodes || [], photos: [], status: 'ouverte', created_by: creator,
+              commentaire: `Avis client à ${r.score} étoile${r.score > 1 ? 's' : ''} : tournée ${r.tour_code} du ${r.task_date.split('-').reverse().join('.')}, tâche ${r.task_ref || r.task_id}.${r.comment ? ` Commentaire du client : « ${r.comment} »` : ''}` }
+            let { data: dem, error: de } = await sb.from('demandes').insert({ ...row, assigned_to: 'partenaire' }).select('id').single()
+            if (de && /assigned_to/.test(de.message)) ({ data: dem, error: de } = await sb.from('demandes').insert(row).select('id').single())
+            if (de) { console.log(`Demande NPS non créée (${r.task_ref}) : ${de.message}`); continue }
+            await sb.from('delivery_ratings').update({ demande_id: dem.id }).eq('task_id', r.task_id)
+            n++
+          }
+          console.log(`Demandes NPS créées : ${n}`)
+        }
+      }
+    }
+    if (!re) console.log(`Notes clients enregistrées : ${ratings.length} (dont ${ratings.filter(r => r.score <= 1).length} à 1 étoile)`)
   }
   // RATINGS_ONLY=1 (avec DATE) : relecture des notes seule (fin de journée, puis J+3), sans toucher aux colis ni aux demandes
   if (process.env.RATINGS_ONLY) { console.log(`Relecture des notes ${day} terminée.`); process.exit(0) }
