@@ -219,6 +219,20 @@ await browser.close()
     if (trs) for (const t of trs) { const d = departs.get(t.tours_references?.name || t.name); if (d && !t.urbantz_depart_reel) await sb.from('tours').update({ urbantz_depart_reel: d.when }).eq('id', t.id) }
     else console.log('Départs dépôt non enregistrés (migration supabase_migration_depart_reel.sql lancée ?)')
   }
+  // Notes de l'enquête de satisfaction client : champs « metadata » de la tâche (EnqueteGlobale = note, EnqueteCommentaire = commentaire)
+  const ratings = []
+  for (const [code, ts] of byRound) for (const t of ts) {
+    const md = t.metadata || {}
+    const raw = md.EnqueteGlobale ?? md.enqueteGlobale
+    const score = raw == null || raw === '' ? NaN : Number(String(raw).replace(',', '.'))
+    if (!Number.isFinite(score)) continue
+    ratings.push({ task_id: String(t._id || t.id), task_date: day, tour_code: code, task_ref: t.taskId || null, score, comment: String(md.EnqueteCommentaire || '').trim() || null, updated_at: new Date().toISOString() })
+  }
+  console.log(`Notes clients Urbantz : ${ratings.length} sur ${[...byRound.values()].reduce((a, ts) => a + ts.length, 0)} tâches`, ratings.slice(0, 6).map(r => `${r.tour_code} ${r.score}`).join(', '))
+  if (!DRY_RUN && ratings.length) {
+    const { error: re } = await sb.from('delivery_ratings').upsert(ratings, { onConflict: 'task_id' })
+    if (re) console.log('Notes clients non enregistrées (migration supabase_migration_notes_clients.sql lancée ?) :', re.message)
+  }
 }
 
 // Règles de sélection
