@@ -92,6 +92,7 @@ if (process.env.DEBUG_CODE && process.env.DEBUG_DETAIL && missionReq) {
         const txt = await resp.text()
         let hits = []
         try { const walk = (o, pa) => { if (o == null) return; if (typeof o === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(o) && hh(o) === want) hits.push(`${pa}=${o}`); else if (typeof o === 'object') for (const [k, v] of Object.entries(o)) walk(v, pa + '.' + k) }; walk(JSON.parse(txt), '') } catch {}
+        if (path === `/mission/${m._id}`) { try { const j = JSON.parse(txt); const st = (j.stops || []).find(x => x.parcel?.log?.length > 2); console.log('DEBUG log colis', JSON.stringify(st?.parcel?.log || null).slice(0, 900)); console.log('DEBUG log item', JSON.stringify(st?.parcel?.items?.[0]?.log || null).slice(0, 900)); console.log('DEBUG mission.log', JSON.stringify(j.log || null).slice(0, 900)) } catch {} }
         console.log(`DEBUG détail ${path} -> HTTP ${resp.status()}, ${txt.length} car., clés : ${(() => { try { const j = JSON.parse(txt); return JSON.stringify(Array.isArray(j) ? Object.keys(j[0] || {}) : Object.keys(j)).slice(0, 400) } catch { return '?' } })()} | à ${want} : ${hits.slice(0, 8).join(' ; ') || 'aucune'}`)
       } catch (e) { console.log(`DEBUG détail ${path} : erreur ${e.message}`) }
     }
