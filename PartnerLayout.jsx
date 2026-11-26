@@ -29,7 +29,20 @@ export default function PartnerLayout() {
         </div>
 
         <nav className="sidebar-nav">
-          <span className="sidebar-section-label">Suivi</span>
+          {profile?.can_view_tour_tracking && (
+            <NavLink to="/partner/dashboard-transport" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+              <BarChart3 size={16} />
+              Dashboard - Transport
+            </NavLink>
+          )}
+          <NavLink to="/partner/notifications" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+            <Bell size={16} />
+            Notifications
+            {notifs.total > 0 && (
+              <span title="Réponses non lues" style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: 11, fontWeight: 700, padding: '1px 7px', minWidth: 18, textAlign: 'center' }}>{notifs.total}</span>
+            )}
+          </NavLink>
+          <span className="sidebar-section-label">Traitement des demandes et défaillances</span>
           <NavLink to="/partner" end className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
             <ClipboardList size={16} />
             Suivi des tâches
@@ -37,40 +50,33 @@ export default function PartnerLayout() {
               <span title="Réponses non lues" style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: 11, fontWeight: 700, padding: '1px 7px', minWidth: 18, textAlign: 'center' }}>{notifs.total}</span>
             )}
           </NavLink>
-          <NavLink to="/partner/notifications" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
-            <Bell size={16} />
-            Notifications
-            {notifs.total > 0 && (
-              <span style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: 11, fontWeight: 700, padding: '1px 7px', minWidth: 18, textAlign: 'center' }}>{notifs.total}</span>
-            )}
-          </NavLink>
           <NavLink to="/partner/defaillances" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
             <AlertTriangle size={16} />
             Défaillances
           </NavLink>
-          <NavLink to="/partner/search-parcel" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
-            <Search size={16} />
-            Recherche BP
-          </NavLink>
+          {profile?.can_manage_loading_plan && (
+            <>
+              <span className="sidebar-section-label" style={{ marginTop: 8 }}>Préparation</span>
+              <NavLink to="/partner/plan-chargement" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+                <LayoutGrid size={16} />
+                Plan de chargement
+              </NavLink>
+            </>
+          )}
+          <span className="sidebar-section-label" style={{ marginTop: 8 }}>Contrôle</span>
           {profile?.can_view_tour_tracking && (
             <NavLink to="/partner/suivi-tournees" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
               <Activity size={16} />
               Suivi des tournées
             </NavLink>
           )}
-          {profile?.can_view_tour_tracking && (
-            <NavLink to="/partner/dashboard-transport" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
-              <BarChart3 size={16} />
-              Dashboard - Transport
-            </NavLink>
-          )}
+          <NavLink to="/partner/search-parcel" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+            <Search size={16} />
+            Recherche BP
+          </NavLink>
           {profile?.can_manage_loading_plan && (
             <>
-              <span className="sidebar-section-label">Plan de chargement</span>
-              <NavLink to="/partner/plan-chargement" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
-                <LayoutGrid size={16} />
-                Plan de chargement
-              </NavLink>
+              <span className="sidebar-section-label" style={{ marginTop: 8 }}>Administratif</span>
               <NavLink to="/partner/destinataires-plan" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
                 <Mail size={16} />
                 Gestion mailing
