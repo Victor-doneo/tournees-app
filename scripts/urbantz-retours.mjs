@@ -67,7 +67,13 @@ const urlFor = (d, n) => `https://web.urbantz.com/platform/c-chez-vous/tasks?mod
 const url = n => urlFor(day, n)
 try {
   await page.goto(url(0), { waitUntil: 'domcontentloaded' })
-  await page.waitForTimeout(4000)
+// Attente de la page de connexion OU des données (jusqu'à 20 s) : un délai fixe de 4 s manquait parfois le formulaire quand Urbantz répondait lentement
+  for (let i = 0; i < 40; i++) {
+    if (tasks.size) break
+    if (await page.locator('input[type="password"]').first().isVisible().catch(() => false)) break
+    await page.waitForTimeout(500)
+  }
+  await page.waitForTimeout(500)
   const pwd = page.locator('input[type="password"]').first()
   if (await pwd.isVisible().catch(() => false) || (await page.locator('input[type="email"], input[name="username"], input[name="email"]').first().isVisible().catch(() => false))) {
     console.log('Page de connexion détectée')
