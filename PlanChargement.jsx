@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './supabase'
 import toast from 'react-hot-toast'
 import { LayoutGrid, Shuffle, Copy, RotateCcw, AlertTriangle, Send, Upload } from 'lucide-react'
@@ -44,13 +44,16 @@ export default function PlanChargement() {
 
   useEffect(() => { if (date) loadTours(date) }, [date])
 
+  const useSavedRef = useRef(false)
   async function loadTours(d) {
     setLoading(true)
     const base = 'id, name, type_livraison, heure_premiere_livraison, code_postal_premiere_livraison, total_parcels, tours_references(name)'
-    let { data, error } = await supabase.from('tours').select(base + ', urbantz_first_arrival, urbantz_hub_depart').eq('delivery_date_id', d.id)
+    let { data, error } = await supabase.from('tours').select(base + ', urbantz_first_arrival, urbantz_hub_depart, loading_slot, loading_quai').eq('delivery_date_id', d.id)
+    if (error) ({ data, error } = await supabase.from('tours').select(base + ', urbantz_first_arrival, urbantz_hub_depart').eq('delivery_date_id', d.id))
     if (error) { // colonnes Urbantz pas encore créées (migration non lancée) : on charge sans elles
       ;({ data, error } = await supabase.from('tours').select(base).eq('delivery_date_id', d.id))
     }
+    useSavedRef.current = true
     if (error) toast.error('Erreur : ' + error.message)
     setRows(data || [])
     setLoading(false)
@@ -74,11 +77,22 @@ export default function PlanChargement() {
       dist,
       trip: travelMinutes(dist, cp ? coords[cp] : null, hpl),
       colis: r.total_parcels,
+      savedSlot: parseHM(r.loading_slot),
+      savedQuai: r.loading_quai ?? null,
     }})
   }, [rows, coords])
 
   // recalcul du plan quand les données ou les réglages changent
-  useEffect(() => { setPlan(tours.length ? generatePlan(tours, { mode, lv1Km, lv1Min, capacity: Math.min(capacity, QUAIS.length), seed }) : []) }, [tours, mode, lv1Km, lv1Min, capacity])
+  useEffect(() => {
+    let p = tours.length ? generatePlan(tours, { mode, lv1Km, lv1Min, capacity: Math.min(capacity, QUAIS.length), seed }) : []
+    // Plan déjà enregistré pour cette journée : on le réaffiche tel quel (créneaux et quais), sans le recalculer
+    if (useSavedRef.current && p.length) {
+      const byId = new Map(tours.map(t => [t.id, t]))
+      if (p.some(t => byId.get(t.id)?.savedSlot != null)) p = p.map(t => { const o = byId.get(t.id); return o?.savedSlot != null ? { ...t, slot: o.savedSlot, quai: o.savedQuai ?? t.quai } : t })
+    }
+    if (tours.length) useSavedRef.current = false
+    setPlan(p)
+  }, [tours, mode, lv1Km, lv1Min, capacity])
 
   // Récupération automatique des heures d'arrivée Urbantz (lance le workflow GitHub puis recharge les tournées)
   const [fetchingUrbantz, setFetchingUrbantz] = useState(false)
@@ -127,10 +141,10 @@ export default function PlanChargement() {
 
   // Enregistre loading_slot via une fonction SQL (un partenaire n'a que la lecture sur tours) ; repli : update direct, avec contrôle du nombre de lignes
   async function persistSlots() {
-    const payload = plan.map(t => ({ id: t.id, slot: fmtMin(t.slot) }))
+    const payload = plan.map(t => ({ id: t.id, slot: fmtMin(t.slot), quai: t.quai ?? null }))
     const { data, error } = await supabase.rpc('save_loading_slots', { slots: payload })
     if (!error) return data === payload.length ? { ok: true } : { ok: false, msg: `${data}/${payload.length} tournées mises à jour` }
-    const res = await Promise.all(plan.map(t => supabase.from('tours').update({ loading_slot: fmtMin(t.slot) }).eq('id', t.id).select('id')))
+    const res = await Promise.all(plan.map(t => supabase.from('tours').update({ loading_slot: fmtMin(t.slot), loading_quai: t.quai ?? null }).eq('id', t.id).select('id')))
     const bad = res.filter(r => r.error || !r.data?.length).length
     return bad ? { ok: false, msg: `${error.message} — lancer supabase_migration_loading_slot_rpc.sql` } : { ok: true }
   }
