@@ -158,7 +158,8 @@ await browser.close()
     // Premier scan : première action « to progress ASSIGNED / status PREPARED » du jour parmi les journaux de toutes les tâches de la tournée
     const dayOf = w => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date(w))
     const all = ts.flatMap(entries)
-    const prep = all.filter(e => { const to = JSON.stringify(e.to || e.new || e); return /ASSIGNED/.test(to) && /PREPARED/.test(to) && dayOf(e.when) === day })
+    // Journal des colis : { when, to: 'PREPARED', by } (l'écran Urbantz l'affiche « to progress ASSIGNED status PREPARED ») ; par: non nul = fait par un utilisateur
+    const prep = all.filter(e => e.to === 'PREPARED' && dayOf(e.when) === day)
     scans.set(code, { when: prep.length ? prep.map(e => e.when).sort()[0] : null, n: all.length })
   }
   const hm = w => new Date(w).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' })
