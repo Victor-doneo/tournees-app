@@ -48,8 +48,10 @@ if (!FORCE && !DATE) {
 const browser = await chromium.launch()
 const page = await (await browser.newContext({ locale: 'fr-FR', timezoneId: 'Europe/Paris' })).newPage()
 const missions = []
+let missionReq = null
 page.on('response', async r => {
   if (/(backend\.urbantz\.com|web\.urbantz\.com\/api)\/missions?(\?|\/?$)/.test(r.url()) && r.url().includes(`date=${day}`)) {
+    if (!missionReq) missionReq = { url: r.url(), headers: r.request().headers() }
     try { const j = await r.json(); if (Array.isArray(j)) missions.push(...j) } catch {}
   }
 })
@@ -74,6 +76,26 @@ try {
   await page.screenshot({ path: 'urbantz-erreur.png', fullPage: true }).catch(() => {})
   await browser.close()
   throw e
+}
+const matchCode0 = name => { const n = String(name || '').toUpperCase().replace(/^TA830CAMION/, ''); return [...codes].sort((a, b) => b.length - a.length).find(c => { const i = n.indexOf(String(c).toUpperCase()); return i >= 0 && !/\d/.test(n[i + String(c).length] || '') }) || null }
+// Diagnostic détail : DEBUG_CODE + DEBUG_DETAIL=1 -> appelle le détail de la tournée (et ses tâches) et cherche l'heure DEBUG_HHMM
+if (process.env.DEBUG_CODE && process.env.DEBUG_DETAIL && missionReq) {
+  const m = missions.find(x => matchCode0(x.name) === process.env.DEBUG_CODE)
+  if (m) {
+    const base = missionReq.url.split('/mission?')[0].replace(/\/mission.*$/, '')
+    const hdr = Object.fromEntries(Object.entries(missionReq.headers).filter(([k]) => !/^(host|content-length|:)/i.test(k)))
+    const hh = iso => new Date(iso).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' })
+    const want = process.env.DEBUG_HHMM || '07:38'
+    for (const path of [`/mission/${m._id}`, `/mission/${m._id}/tracking`, `/task?mission=${m._id}`, `/task?round=${m._id}`, `/mission/${m._id}/tasks`]) {
+      try {
+        const resp = await page.request.get(base + path, { headers: hdr })
+        const txt = await resp.text()
+        let hits = []
+        try { const walk = (o, pa) => { if (o == null) return; if (typeof o === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(o) && hh(o) === want) hits.push(`${pa}=${o}`); else if (typeof o === 'object') for (const [k, v] of Object.entries(o)) walk(v, pa + '.' + k) }; walk(JSON.parse(txt), '') } catch {}
+        console.log(`DEBUG détail ${path} -> HTTP ${resp.status()}, ${txt.length} car., clés : ${(() => { try { const j = JSON.parse(txt); return JSON.stringify(Array.isArray(j) ? Object.keys(j[0] || {}) : Object.keys(j)).slice(0, 400) } catch { return '?' } })()} | à ${want} : ${hits.slice(0, 8).join(' ; ') || 'aucune'}`)
+      } catch (e) { console.log(`DEBUG détail ${path} : erreur ${e.message}`) }
+    }
+  }
 }
 await browser.close()
 
