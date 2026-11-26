@@ -30,7 +30,7 @@ async function fetchAll(build) {
 
 export default function DashboardTransport() {
   const today = parisDay(new Date())
-  const [from, setFrom] = useState(addDays(today, -13))
+  const [from, setFrom] = useState('2026-11-16')
   const [to, setTo] = useState(today)
   const [tours, setTours] = useState([])
   const [labels, setLabels] = useState([])
@@ -110,7 +110,7 @@ export default function DashboardTransport() {
     const list = lists[kind]
     if (!list.length) return null
     return (
-      <tr><td colSpan={9} style={{ background: 'var(--gray-50, #f9fafb)', padding: '8px 16px', fontSize: 12 }}>
+      <tr><td colSpan={6} style={{ background: 'var(--gray-50, #f9fafb)', padding: '8px 16px', fontSize: 12 }}>
         {kind === 'dep' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, départ {x.real} (+{x.d} min)</div>)}
         {kind === 'arr' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, premier scan {x.real} (+{x.d} min)</div>)}
         {kind === 'nb' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : {x.back}</div>)}
@@ -118,7 +118,7 @@ export default function DashboardTransport() {
       </td></tr>
     )
   }
-  const cellBtn = (r, kind, n, red, p) => <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{n ? <button className="btn btn-ghost btn-sm" style={{ color: red ? 'var(--red)' : undefined, fontWeight: 700 }} onClick={() => setOpen(open && open.n === r.name && open.k === kind ? null : { n: r.name, k: kind })}>{n} <span style={{ fontWeight: 500 }}>({p})</span></button> : <span style={{ color: 'var(--gray-400)' }}>0 ({p})</span>}</td>
+  const cellBtn = (r, kind, n, red, p, tot) => <td style={{ textAlign: 'right', whiteSpace: 'nowrap', padding: '6px', fontSize: 13 }}>{n ? <button className="btn btn-ghost btn-sm" style={{ color: red ? 'var(--red)' : undefined, fontWeight: 700 }} onClick={() => setOpen(open && open.n === r.name && open.k === kind ? null : { n: r.name, k: kind })}>{n}<span style={{ fontWeight: 500, color: 'var(--gray-500)' }}> / {tot} · {p}</span></button> : <span style={{ color: 'var(--gray-400)' }}>0 / {tot} · {p}</span>}</td>
 
   return (
     <>
@@ -139,19 +139,17 @@ export default function DashboardTransport() {
         </div>
         <div className="card" style={{ overflow: 'hidden' }}>
           <div className="table-wrapper"><table>
-            <thead><tr><th style={{ textAlign: 'center' }}>Rang</th><th>Fournisseur</th><th style={{ textAlign: 'right' }}>Tournées avec créneau</th><th style={{ textAlign: 'right' }}>Départs en retard</th><th style={{ textAlign: 'right' }}>Arrivées en retard</th><th style={{ textAlign: 'right' }}>Tournées attendues</th><th style={{ textAlign: 'right' }}>Non rentrées le jour même</th><th style={{ textAlign: 'right' }}>Colis à rapatrier</th></tr></thead>
+            <thead><tr><th style={{ textAlign: 'center', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Rang</th><th style={{ textAlign: 'left', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Fournisseur</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Départs en retard<br/>(&gt; 1 h)</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Arrivées en retard<br/>(&gt; 10 min)</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Non rentrées<br/>le jour même</th><th style={{ textAlign: 'right', fontSize: 12, lineHeight: 1.2, padding: '8px 6px' }}>Colis à<br/>rapatrier</th></tr></thead>
             <tbody>
-              {stats.rows.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--gray-400)' }}>Aucune tournée sur la période</td></tr>}
+              {stats.rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--gray-400)' }}>Aucune tournée sur la période</td></tr>}
               {stats.rows.map(r => [
                 <tr key={r.name}>
-                  <td style={{ textAlign: 'center', fontWeight: 800 }}>{r.rank ?? '—'}</td>
-                  <td style={{ fontWeight: 700 }}>{r.name}</td>
-                  <td style={{ textAlign: 'right' }}>{r.withSlot}</td>
-                  {cellBtn(r, 'dep', r.depRetard, true, pct(r.depRetard, r.withSlot))}
-                  {cellBtn(r, 'arr', r.arrRetard, true, pct(r.arrRetard, r.withSlot))}
-                  <td style={{ textAlign: 'right' }}>{r.expected}</td>
-                  {cellBtn(r, 'nb', r.notBack, true, pct(r.notBack, r.expected))}
-                  {cellBtn(r, 'pc', r.parcels, true, pct(r.parcels, r.parcelsTotal))}
+                  <td style={{ textAlign: 'center', fontWeight: 800, padding: '6px' }}>{r.rank ?? '—'}</td>
+                  <td style={{ fontWeight: 700, padding: '6px' }}>{r.name}</td>
+                  {cellBtn(r, 'dep', r.depRetard, true, pct(r.depRetard, r.withSlot), r.withSlot)}
+                  {cellBtn(r, 'arr', r.arrRetard, true, pct(r.arrRetard, r.withSlot), r.withSlot)}
+                  {cellBtn(r, 'nb', r.notBack, true, pct(r.notBack, r.expected), r.expected)}
+                  {cellBtn(r, 'pc', r.parcels, true, pct(r.parcels, r.parcelsTotal), r.parcelsTotal)}
                 </tr>,
                 open && open.n === r.name ? <Fragment2 key={r.name + 'd'}>{detail(r, open.k)}</Fragment2> : null,
               ])}
