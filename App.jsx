@@ -4,6 +4,7 @@ import LoginPage from './LoginPage'
 import AdminLayout from './AdminLayout'
 import OperatorLayout from './OperatorLayout'
 import Dashboard from './Dashboard'
+import DashboardTransport from './DashboardTransport'
 import Tours from './Tours'
 import Users from './Users'
 import SearchParcel from './SearchParcel'
@@ -72,6 +73,7 @@ export default function App() {
       {/* Admin routes */}
       <Route path="/admin" element={<PrivateRoute roles={['admin']}><AdminLayout /></PrivateRoute>}>
         <Route index element={<Dashboard />} />
+        <Route path="dashboard-transport" element={<DashboardTransport />} />
         <Route path="tours" element={<Tours />} />
         <Route path="upload" element={<UploadPDF />} />
         <Route path="users" element={<Users />} />

@@ -88,7 +88,7 @@ export default function Dashboard() {
       <div className="page-header">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="page-title">Dashboard</h2>
+            <h2 className="page-title">Dashboard - Logistique</h2>
             <p className="page-subtitle" style={{ textTransform: 'capitalize' }}>Préparation du {nextDate ? new Date(nextDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) : '...'}</p>
           </div>
         </div>

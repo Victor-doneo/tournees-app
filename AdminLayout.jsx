@@ -11,7 +11,8 @@ const navSections = [
   {
     label: null,
     items: [
-      { to: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={16} />, end: true },
+      { to: '/admin', label: 'Dashboard - Logistique', icon: <LayoutDashboard size={16} />, end: true },
+      { to: '/admin/dashboard-transport', label: 'Dashboard - Transport', icon: <Truck size={16} /> },
       { to: '/admin/notifications', label: 'Notifications', icon: <Bell size={16} /> },
     ],
   },
