@@ -97,6 +97,15 @@ export default function PlanChargement() {
     setPlan(p => shuffleQuais(p, s))
   }
 
+  const [dragId, setDragId] = useState(null)
+  function moveTo(s, q) { if (dragId == null) return; edit(dragId, { slot: s, quai: q }); setDragId(null) }
+  function swapWith(target) {
+    if (dragId == null || dragId === target.id) return setDragId(null)
+    const a = plan.find(t => t.id === dragId)
+    if (!a) return setDragId(null)
+    setPlan(p => p.map(t => t.id === a.id ? { ...t, slot: target.slot, quai: target.quai } : t.id === target.id ? { ...t, slot: a.slot, quai: a.quai } : t))
+    setDragId(null)
+  }
   function edit(id, patch) { setPlan(p => p.map(t => (t.id === id ? { ...t, ...patch } : t))) }
 
   const conflicts = useMemo(() => {
@@ -236,6 +245,7 @@ export default function PlanChargement() {
         ) : (
           <>
             <div className="card" style={{ marginBottom: 20 }}>
+              <div style={{ padding: '8px 16px', fontSize: 12, color: 'var(--gray-400)' }}>Glissez une tournée vers une autre case pour la déplacer (déposée sur une autre tournée, les deux s'échangent).</div>
               <div className="table-wrapper">
                 <table>
                   <thead><tr><th></th>{QUAIS.map(q => <th key={q} style={{ textAlign: 'center' }}>QUAI {q}</th>)}</tr></thead>
@@ -244,10 +254,12 @@ export default function PlanChargement() {
                       <tr key={s}>
                         <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtMin(s)}</td>
                         {QUAIS.map(q => (
-                          <td key={q} style={{ textAlign: 'center', fontFamily: 'monospace', fontSize: 13 }}>
+                          <td key={q} style={{ textAlign: 'center', fontFamily: 'monospace', fontSize: 13, minWidth: 90, background: dragId != null ? '#f8fafc' : undefined }}
+                            onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); moveTo(s, q) }}>
                             {cell(s, q).map(t => (
-                              <span key={t.id} title={`${t.lv1 ? 'LV1 · ' : ''}${t.dist != null ? Math.round(t.dist) + ' km · ~' + Math.round(t.trip) + ' min' : 'distance inconnue'}`}
-                                style={{ display: 'inline-block', padding: '2px 6px', borderRadius: 4, background: conflicts.has(t.id) ? '#fee2e2' : t.lv1 ? '#eff6ff' : 'var(--gray-100)', color: t.lv1 ? '#1e40af' : 'inherit' }}>
+                              <span key={t.id} draggable onDragStart={e => { setDragId(t.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(t.id)) }} onDragEnd={() => setDragId(null)}
+                                onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); e.stopPropagation(); swapWith(t) }} title={`${t.lv1 ? 'LV1 · ' : ''}${t.dist != null ? Math.round(t.dist) + ' km · ~' + Math.round(t.trip) + ' min' : 'distance inconnue'}`}
+                                style={{ display: 'inline-block', padding: '2px 6px', borderRadius: 4, cursor: 'grab', opacity: dragId === t.id ? .4 : 1, background: conflicts.has(t.id) ? '#fee2e2' : t.lv1 ? '#eff6ff' : 'var(--gray-100)', color: t.lv1 ? '#1e40af' : 'inherit' }}>
                                 {t.name}
                               </span>
                             ))}
