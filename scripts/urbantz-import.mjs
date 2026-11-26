@@ -83,6 +83,17 @@ const matchCode = name => {
   const n = String(name || '').toUpperCase().replace(/^TA830CAMION/, '')
   return [...codes].sort((a, b) => b.length - a.length).find(c => { const i = n.indexOf(String(c).toUpperCase()); return i >= 0 && !/\d/.test(n[i + String(c).length] || '') }) || null
 }
+// Diagnostic : DEBUG_CODE=TKN1 affiche les champs horaires de la tournée Urbantz correspondante (pour repérer « l'heure de début »)
+if (process.env.DEBUG_CODE) {
+  const m = missions.find(x => matchCode(x.name) === process.env.DEBUG_CODE)
+  if (!m) console.log(`DEBUG ${process.env.DEBUG_CODE} : tournée introuvable parmi ${missions.map(x => x.name).slice(0, 10).join(' | ')}`)
+  else {
+    const pick = (o, path = '') => Object.entries(o || {}).flatMap(([k, v]) => v && typeof v === 'object' && !Array.isArray(v) ? pick(v, path + k + '.') : /start|begin|depart|time|hour|date|arriv|when|begin/i.test(k) && !Array.isArray(v) ? [[path + k, v]] : [])
+    console.log('DEBUG champs de la tournée', m.name, JSON.stringify(Object.keys(m)))
+    console.log('DEBUG horaires', JSON.stringify(pick(m)))
+    for (const st of (m.stops || []).slice(0, 3)) console.log('DEBUG stop', st.type, JSON.stringify(pick(st)))
+  }
+}
 const found = {}
 for (const m of missions) {
   const hub = (m.stops || []).find(s => s.type === 'hub'), first = (m.stops || []).find(s => s.type === 'delivery')
