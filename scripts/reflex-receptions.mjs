@@ -359,10 +359,12 @@ async function articleSearchCheck(bp, minKey) {
   for (let i = 0; i < 6 && !rows.length; i++) { await sleep(1500); rows = await readAll() }
   const who = norm(ARTICLE_USER)
   const mine = rows.filter(r => norm(r.join(' ')).includes(who))
-  const best = mine.map(r => ({ r, key: dateKeys(r.join(' ')).sort().pop() || '' })).filter(x => x.key).sort((a, b) => a.key.localeCompare(b.key)).pop()
+  // Entrée en stock : ligne « GEI » (mouvement d'entrée, sans utilisateur) = colis bien entré dans REFLEX, même sans ligne de ARTICLE_USER
+  const mine0 = rows.filter(r => /^GEI$/i.test((r[0] || '').trim()) || norm(r.join(' ')).includes(who))
+  const best = mine0.map(r => ({ r, key: dateKeys(r.join(' ')).sort().pop() || '' })).filter(x => x.key).sort((a, b) => a.key.localeCompare(b.key)).pop()
   console.log('  lignes de ' + ARTICLE_USER + ' :', JSON.stringify(mine.slice(0, 6)))
-  if (!mine.length) console.log('  premières lignes :', JSON.stringify(rows.slice(0, 3)))
-  console.log(`  Recherche article ${bp} : ${rows.length} ligne(s), ${mine.length} de « ${ARTICLE_USER} »${best ? `, plus récente ${best.key.slice(6)}/${best.key.slice(4, 6)}/${best.key.slice(0, 4)}` : ''}`)
+  if (!mine.length) console.log('  premières lignes :', JSON.stringify(rows.slice(0, 6)))
+  console.log(`  Recherche article ${bp} : ${rows.length} ligne(s), ${mine.length} de « ${ARTICLE_USER} », ${rows.filter(r => /^GEI$/i.test((r[0] || '').trim())).length} entrée(s) GEI${best ? `, plus récente ${best.key.slice(6)}/${best.key.slice(4, 6)}/${best.key.slice(0, 4)}` : ''}`)
   if (!rows.length) await shot(`article-vide-${bp}`)
   await closeResults()
   if (best && best.key >= minKey) return { found: true, date: `${best.key.slice(6)}/${best.key.slice(4, 6)}/${best.key.slice(0, 4)}`, rows: rows.length }
