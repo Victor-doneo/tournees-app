@@ -91,6 +91,18 @@ if (process.env.DEBUG_CODE) {
     const pick = (o, path = '') => Object.entries(o || {}).flatMap(([k, v]) => v && typeof v === 'object' && !Array.isArray(v) ? pick(v, path + k + '.') : /start|begin|depart|time|hour|date|arriv|when|begin/i.test(k) && !Array.isArray(v) ? [[path + k, v]] : [])
     console.log('DEBUG champs de la tournée', m.name, JSON.stringify(Object.keys(m)))
     console.log('DEBUG horaires', JSON.stringify(pick(m)))
+    // Recherche de la valeur « 07:38 » (ou DEBUG_HHMM) n'importe où dans la tournée : chemin du champ qui la contient
+    const want = process.env.DEBUG_HHMM || '07:38', hits = []
+    const walk = (o, path) => {
+      if (o == null) return
+      if (typeof o === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(o) && hhmm(o) === want) hits.push(`${path} = ${o}`)
+      else if (typeof o === 'number' && o > 1e9 && o < 3e9 && hhmm(new Date(o * 1000).toISOString()) === want) hits.push(`${path} = ${o} (s)`)
+      else if (typeof o === 'object') for (const [k, v] of Object.entries(o)) walk(v, `${path}.${k}`)
+    }
+    walk(m, 'mission')
+    console.log(`DEBUG valeurs à ${want} :`, hits.length ? hits.slice(0, 12).join(' ; ') : 'aucune')
+    const act = m.activity
+    console.log('DEBUG activity', JSON.stringify(act).slice(0, 600))
     console.log('DEBUG début (Paris)', hhmm(m.startTime), '| fin', hhmm(m.endTime), '| arrivées des stops :', (m.stops || []).map(st => `${st.type[0]}${hhmm(st.arriveTime)}`).join(' '))
     for (const st of (m.stops || []).slice(0, 3)) console.log('DEBUG stop', st.type, JSON.stringify(pick(st)))
   }
