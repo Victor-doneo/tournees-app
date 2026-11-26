@@ -5,6 +5,7 @@ import { Truck, Clock, PackageX, AlertTriangle } from 'lucide-react'
 // Règles (heures de Paris, créneau = tours.loading_slot du plan de chargement envoyé / enregistré)
 const DEPART_RETARD_MIN = 60 // « Départ en retard » : départ réel du dépôt > créneau + 1 h
 const ARRIVEE_RETARD_MIN = 10 // « Arrivée en retard » : premier scan > créneau + 10 min
+const PARCELS_FROM = '2026-11-16' // colis à rapatrier : suivis seulement à partir du 16/11/2026
 const EXCLUDED_RECV = ['receptionne', 'livre'] // colis déjà réceptionné dans REFLEX / livré : pas en attente de rapatriement
 
 const parisDay = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date(d))
@@ -76,7 +77,7 @@ export default function DashboardTransport() {
       }
     }
     for (const l of labels) {
-      if (l.received_at || EXCLUDED_RECV.includes(l.reflex_recv_status) || l.task_date >= today) continue
+      if (l.received_at || EXCLUDED_RECV.includes(l.reflex_recv_status) || l.task_date >= today || l.task_date < PARCELS_FROM) continue
       const s = get(supplierOf.get(`${l.task_date}|${l.tour_code}`) || 'Tournée non reconnue')
       s.parcels++; s.parcelList.push({ day: l.task_date, code: l.tour_code || '—', bp: l.barcode })
     }
@@ -123,7 +124,7 @@ export default function DashboardTransport() {
           <Card icon={<Clock size={14} />} label="Départs en retard" value={stats.tot.depRetard} sub={`> ${DEPART_RETARD_MIN} min après le créneau · ${stats.tot.withSlot} tournées avec créneau`} color={stats.tot.depRetard ? 'var(--red)' : undefined} />
           <Card icon={<Clock size={14} />} label="Arrivées en retard" value={stats.tot.arrRetard} sub={`premier scan > ${ARRIVEE_RETARD_MIN} min après le créneau`} color={stats.tot.arrRetard ? 'var(--red)' : undefined} />
           <Card icon={<Truck size={14} />} label="Non rentrées le jour même" value={pct(stats.tot.notBack, stats.tot.expected)} sub={`${stats.tot.notBack} sur ${stats.tot.expected} tournées attendues`} />
-          <Card icon={<PackageX size={14} />} label="Colis en attente de rapatriement" value={stats.tot.parcels} sub="non réceptionnés (hors REFLEX et livrés)" color={stats.tot.parcels ? 'var(--orange, #d97706)' : undefined} />
+          <Card icon={<PackageX size={14} />} label="Colis en attente de rapatriement" value={stats.tot.parcels} sub="depuis le 16/11 · hors réceptionnés REFLEX et livrés" color={stats.tot.parcels ? 'var(--orange, #d97706)' : undefined} />
         </div>
         <div className="card" style={{ overflow: 'hidden' }}>
           <div className="table-wrapper"><table>
