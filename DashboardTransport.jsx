@@ -34,6 +34,7 @@ export default function DashboardTransport() {
   const [to, setTo] = useState(today)
   const [tours, setTours] = useState([])
   const [labels, setLabels] = useState([])
+  const [ratings, setRatings] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [open, setOpen] = useState(null)
@@ -47,14 +48,16 @@ export default function DashboardTransport() {
         .gte('delivery_dates.delivery_date', from).lte('delivery_dates.delivery_date', to).order('id'))
       const l = await fetchAll(() => supabase.from('return_labels')
         .select('id, task_date, tour_code, barcode, received_at, reflex_recv_status').gte('task_date', from).lte('task_date', to).order('id'))
-      setTours(t); setLabels(l)
+      let rt = []
+      try { rt = await fetchAll(() => supabase.from('delivery_ratings').select('task_id, task_date, tour_code, score').gte('task_date', from).lte('task_date', to).order('task_id')) } catch { rt = [] } // table absente tant que la migration n'est pas lancée
+      setTours(t); setLabels(l); setRatings(rt)
     } catch (e) { setError(e.message || String(e)) }
     setLoading(false)
   }
 
   const stats = useMemo(() => {
     const sup = {}
-    const get = k => (sup[k] = sup[k] || { name: k, withSlot: 0, depRetard: 0, arrRetard: 0, expected: 0, notBack: 0, parcels: 0, lateDep: [], lateArr: [], notBackList: [], parcelList: [], parcelsTotal: 0 })
+    const get = k => (sup[k] = sup[k] || { name: k, withSlot: 0, depRetard: 0, arrRetard: 0, expected: 0, notBack: 0, parcels: 0, ratingSum: 0, ratingN: 0, lateDep: [], lateArr: [], notBackList: [], parcelList: [], parcelsTotal: 0 })
     const supplierOf = new Map() // `${jour}|${code}` -> fournisseur
     const dayOfTour = t => t.delivery_dates?.delivery_date
     const codeOf = t => t.tours_references?.name || t.name
@@ -84,6 +87,7 @@ export default function DashboardTransport() {
       const s = get(sName)
       s.parcels++; s.parcelList.push({ day: l.task_date, code: l.tour_code || '—', bp: l.barcode })
     }
+    for (const x of ratings) { const n = supplierOf.get(`${x.task_date}|${x.tour_code}`); if (n) { const r = get(n); r.ratingSum += Number(x.score); r.ratingN++ } }
     const rows = Object.values(sup)
     const ratio = (a, b) => (b ? a / b : null)
     for (const r of rows) r.ratios = [ratio(r.depRetard, r.withSlot), ratio(r.arrRetard, r.withSlot), ratio(r.notBack, r.expected), ratio(r.parcels, r.parcelsTotal)]
@@ -99,7 +103,7 @@ export default function DashboardTransport() {
     rows.forEach((r, i) => { r.rank = r.score === Infinity ? null : i + 1 })
     const sum = k => rows.reduce((a, r) => a + r[k], 0)
     return { rows, tot: { withSlot: sum('withSlot'), depRetard: sum('depRetard'), arrRetard: sum('arrRetard'), expected: sum('expected'), notBack: sum('notBack'), parcels: sum('parcels') } }
-  }, [tours, labels, today])
+  }, [tours, labels, ratings, today])
 
   const pct = (a, b) => (b ? `${Math.round(100 * a / b)} %` : '—')
   const Card = ({ icon, label, value, sub, color }) => (
@@ -154,6 +158,7 @@ export default function DashboardTransport() {
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)' }}>{r.rank ? (r.rank === 1 ? '1er' : `${r.rank}e`) : '—'}</div>
                     <div style={{ fontSize: 18, fontWeight: 800 }}>{r.name}</div>
                     <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>score qualité /100</div>
+                    {r.ratingN > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginTop: 2 }}>★ {(r.ratingSum / r.ratingN).toFixed(1).replace('.', ',')} / 5 · {r.ratingN} avis clients</div>}
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
