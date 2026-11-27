@@ -30,7 +30,7 @@ async function fetchAll(build) {
   return out
 }
 
-export default function DashboardTransport() {
+export default function DashboardTransport({ carrier = false }) {
   const today = parisDay(new Date())
   const [from, setFrom] = useState('2026-11-16')
   const [to, setTo] = useState(today)
@@ -41,7 +41,8 @@ export default function DashboardTransport() {
   const [error, setError] = useState('')
   const [open, setOpen] = useState(null)
   const navigate = useNavigate()
-  const base = useLocation().pathname.startsWith('/partner') ? '/partner' : '/admin'
+  const path0 = useLocation().pathname
+  const base = path0.startsWith('/carrier') ? '/carrier' : path0.startsWith('/partner') ? '/partner' : '/admin'
   const goParcels = supplier => navigate(`${base}/colis-non-rapatries${supplier ? '?supplier=' + encodeURIComponent(supplier) : ''}`)
 
   // Une réponse tardive d'un ancien filtre ne doit pas écraser la plus récente (sinon l'écran montre tout le périmètre)
@@ -131,7 +132,7 @@ export default function DashboardTransport() {
     <>
       <div className="page-header">
         <div className="flex items-center justify-between" style={{ gap: 12, flexWrap: 'wrap' }}>
-        <div><h2 className="page-title">Dashboard - Transport</h2><p className="page-subtitle">Retards de départ et d'arrivée par fournisseur, tournées non rentrées et colis à rapatrier</p></div>
+        <div><h2 className="page-title">{carrier ? 'Ma qualité' : 'Dashboard - Transport'}</h2><p className="page-subtitle">{carrier ? 'Tes retards de départ et d\'arrivée, tournées non rentrées, colis à rapatrier et avis clients' : 'Retards de départ et d\'arrivée par fournisseur, tournées non rentrées et colis à rapatrier'}</p></div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 13 }}>Du <input type="date" className="form-input" style={{ width: 'auto', display: 'inline-block' }} value={from} max={to} onChange={e => e.target.value && setFrom(e.target.value)} /></label>
           <label style={{ fontSize: 13 }}>au <input type="date" className="form-input" style={{ width: 'auto', display: 'inline-block' }} value={to} min={from} onChange={e => e.target.value && setTo(e.target.value)} /></label>
@@ -169,7 +170,7 @@ export default function DashboardTransport() {
                     <text x="42" y="49" textAnchor="middle" fontSize="22" fontWeight="800" fill="#14181F">{q ?? '—'}</text>
                   </svg>
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)' }}>{r.rank ? (r.rank === 1 ? '1er' : `${r.rank}e`) : '—'}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)' }}>{carrier ? 'Score' : r.rank ? (r.rank === 1 ? '1er' : `${r.rank}e`) : '—'}</div>
                     <div style={{ fontSize: 18, fontWeight: 800 }}>{r.name}</div>
                     <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>score qualité /100</div>
                     {r.ratingN > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginTop: 2 }}>★ {(r.ratingSum / r.ratingN).toFixed(1).replace('.', ',')} / 5 · {r.ratingN} avis clients</div>}

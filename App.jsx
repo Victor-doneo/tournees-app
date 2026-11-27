@@ -6,6 +6,7 @@ import OperatorLayout from './OperatorLayout'
 import Dashboard from './Dashboard'
 import DashboardTransport from './DashboardTransport'
 import ColisNonRapatries from './ColisNonRapatries'
+import CarrierLayout from './CarrierLayout'
 import Tours from './Tours'
 import Users from './Users'
 import SearchParcel from './SearchParcel'
@@ -33,6 +34,7 @@ import PartnerLayout from './PartnerLayout'
 function homeForRole(role) {
   if (role === 'admin') return '/admin'
   if (role === 'partner') return '/partner'
+  if (role === 'carrier') return '/carrier'
   return '/operator'
 }
 
@@ -46,6 +48,20 @@ function TrackingRoute({ children }) {
   return profile?.can_view_tour_tracking ? children : <Navigate to="/partner" replace />
 }
 
+// Compte désactivé par un administrateur : aucun accès
+function InactiveAccount() {
+  const { signOut } = useAuth()
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div className="card" style={{ padding: 28, maxWidth: 420, textAlign: 'center' }}>
+        <h2 style={{ marginBottom: 8 }}>Compte désactivé</h2>
+        <p style={{ color: 'var(--gray-500)', marginBottom: 16 }}>Ton accès a été désactivé. Contacte un administrateur pour le réactiver.</p>
+        <button className="btn btn-primary" onClick={signOut}>Se déconnecter</button>
+      </div>
+    </div>
+  )
+}
+
 function PrivateRoute({ children, roles }) {
   const { user, profile, loading } = useAuth()
   if (loading) return (
@@ -55,6 +71,7 @@ function PrivateRoute({ children, roles }) {
     </div>
   )
   if (!user) return <Navigate to="/login" replace />
+  if (profile && profile.active === false) return <InactiveAccount />
   if (roles && !roles.includes(profile?.role)) return <Navigate to={homeForRole(profile?.role)} replace />
   return children
 }
@@ -118,6 +135,12 @@ export default function App() {
         <Route path="colis-non-rapatries" element={<TrackingRoute><ColisNonRapatries /></TrackingRoute>} />
         <Route path="plan-chargement" element={<LoadingPlanRoute><PlanChargement /></LoadingPlanRoute>} />
         <Route path="destinataires-plan" element={<LoadingPlanRoute><EmailRecipients only="plan" /></LoadingPlanRoute>} />
+      </Route>
+
+      {/* Transporteur : sa qualité et ses colis non rapatriés (données filtrées côté base) */}
+      <Route path="/carrier" element={<PrivateRoute roles={['carrier']}><CarrierLayout /></PrivateRoute>}>
+        <Route index element={<DashboardTransport carrier />} />
+        <Route path="colis-non-rapatries" element={<ColisNonRapatries />} />
       </Route>
 
       <Route path="*" element={<Navigate to={user ? homeForRole(profile?.role) : '/login'} />} />
