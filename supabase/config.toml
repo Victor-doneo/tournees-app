@@ -1,0 +1,5 @@
+project_id = "thnlgvqncjdnholqbrie"
+
+# Appelée par Resend (webhook) : pas de jeton Supabase, la fonction vérifie son propre secret (INGEST_SECRET)
+[functions.groupages-inbound]
+verify_jwt = false
