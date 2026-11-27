@@ -8,6 +8,7 @@ const DEPART_RETARD_MIN = 60 // « Départ en retard » : départ réel du dép�
 const ARRIVEE_RETARD_MIN = 10 // « Arrivée en retard » : premier scan > créneau + 10 min
 const PARCELS_FROM = '2026-11-16' // début du suivi : colis à rapatrier et tournées non rentrées ignorent les jours précédents
 const NOT_BACK_MAX_DEPART = 6 * 60 + 30 // « Non rentrée » : seules comptent les tournées dont le rendez-vous du plan de chargement est à 06h30 ou avant
+const PREP_MAX_MIN = 180 // au-delà de 3 h entre premier scan et départ : valeur aberrante, écartée de la moyenne de préparation
 const EXCLUDED_RECV = ['receptionne', 'livre'] // colis déjà réceptionné dans REFLEX / livré : pas en attente de rapatriement
 
 const parisDay = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date(d))
@@ -66,7 +67,7 @@ export default function DashboardTransport({ carrier = false }) {
 
   const stats = useMemo(() => {
     const sup = {}
-    const get = k => (sup[k] = sup[k] || { name: k, withSlot: 0, depRetard: 0, arrRetard: 0, expected: 0, notBack: 0, parcels: 0, ratingSum: 0, ratingN: 0, stars1: [], lateDep: [], lateArr: [], notBackList: [], parcelList: [], parcelsTotal: 0 })
+    const get = k => (sup[k] = sup[k] || { name: k, withSlot: 0, depRetard: 0, arrRetard: 0, expected: 0, notBack: 0, parcels: 0, prepSum: 0, prepN: 0, prepOut: 0, ratingSum: 0, ratingN: 0, stars1: [], lateDep: [], lateArr: [], notBackList: [], parcelList: [], parcelsTotal: 0 })
     const supplierOf = new Map() // `${jour}|${code}` -> fournisseur
     const dayOfTour = t => t.delivery_dates?.delivery_date
     const codeOf = t => t.tours_references?.name || t.name
@@ -79,6 +80,11 @@ export default function DashboardTransport({ carrier = false }) {
         s.withSlot++
         if (t.urbantz_depart_reel) { const d = delta(t.urbantz_depart_reel, day, t.loading_slot); if (d > DEPART_RETARD_MIN) { s.depRetard++; s.lateDep.push({ day, code: codeOf(t), slot: String(t.loading_slot).slice(0, 5), real: hhmm(t.urbantz_depart_reel), d }) } }
         if (t.urbantz_premier_scan) { const d = delta(t.urbantz_premier_scan, day, t.loading_slot); if (d > ARRIVEE_RETARD_MIN) { s.arrRetard++; s.lateArr.push({ day, code: codeOf(t), slot: String(t.loading_slot).slice(0, 5), real: hhmm(t.urbantz_premier_scan), d }) } }
+      }
+      // Temps de préparation = premier scan -> départ du dépôt ; au-delà de PREP_MAX_MIN c'est une valeur aberrante (préparation faite la veille, départ très tardif), écartée de la moyenne
+      if (t.urbantz_premier_scan && t.urbantz_depart_reel) {
+        const m = (new Date(t.urbantz_depart_reel) - new Date(t.urbantz_premier_scan)) / 60000
+        if (m > 0) { if (m <= PREP_MAX_MIN) { s.prepSum += m; s.prepN++ } else s.prepOut++ }
       }
       // Tournée attendue = elle a des colis à retourner ; jours passés seulement, hors samedi/dimanche
       const dow = new Date(day + 'T12:00:00').getDay()
@@ -117,9 +123,10 @@ export default function DashboardTransport({ carrier = false }) {
     rows.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
     rows.forEach((r, i) => { r.rank = r.score === Infinity ? null : i + 1 })
     const sum = k => rows.reduce((a, r) => a + r[k], 0)
-    return { rows, tot: { withSlot: sum('withSlot'), depRetard: sum('depRetard'), arrRetard: sum('arrRetard'), expected: sum('expected'), notBack: sum('notBack'), parcels: sum('parcels') } }
+    return { rows, tot: { withSlot: sum('withSlot'), depRetard: sum('depRetard'), arrRetard: sum('arrRetard'), expected: sum('expected'), notBack: sum('notBack'), parcels: sum('parcels'), prepSum: sum('prepSum'), prepN: sum('prepN'), prepOut: sum('prepOut') } }
   }, [tours, labels, ratings, today])
 
+  const dur = m => m == null ? '—' : m >= 60 ? `${Math.floor(m / 60)} h ${String(Math.round(m % 60)).padStart(2, '0')}` : `${Math.round(m)} min`
   const pct = (a, b) => (b ? `${Math.round(100 * a / b)} %` : '—')
   const Card = ({ icon, label, value, sub, color, onClick }) => (
     <div className="card" style={{ padding: 16, flex: '1 1 200px', cursor: onClick ? 'pointer' : undefined }} {...(onClick ? { onClick, role: 'link', tabIndex: 0, onKeyDown: e => { if (e.key === 'Enter') onClick() }, title: 'Voir la liste des colis non rapatriés' } : {})}>
@@ -147,6 +154,7 @@ export default function DashboardTransport({ carrier = false }) {
           <Card icon={<Clock size={14} />} label="Arrivées en retard" value={stats.tot.arrRetard} sub={`premier scan > ${ARRIVEE_RETARD_MIN} min après le créneau`} color={stats.tot.arrRetard ? 'var(--red)' : undefined} />
           <Card icon={<Truck size={14} />} label="Non rentrées le jour même" value={pct(stats.tot.notBack, stats.tot.expected)} sub={`${stats.tot.notBack} sur ${stats.tot.expected} tournées (rendez-vous plan de chargement ≤ 6h30) attendues`} />
           <Card icon={<PackageX size={14} />} label="Colis en attente de rapatriement" value={stats.tot.parcels} sub="depuis le 16/11 · hors réceptionnés REFLEX et livrés" color={stats.tot.parcels ? 'var(--orange, #d97706)' : undefined} onClick={() => goParcels()} />
+          <Card icon={<Clock size={14} />} label="Temps de préparation moyen" value={stats.tot.prepN ? dur(stats.tot.prepSum / stats.tot.prepN) : '—'} sub={`premier scan → départ dépôt · ${stats.tot.prepN} tournées${stats.tot.prepOut ? ` (${stats.tot.prepOut} > ${PREP_MAX_MIN / 60} h écartées)` : ''}`} />
         </div>
         {stats.rows.length === 0 && <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--gray-400)' }}>Aucune tournée sur la période</div>}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16 }}>
@@ -173,6 +181,7 @@ export default function DashboardTransport({ carrier = false }) {
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)' }}>{carrier ? 'Score' : r.rank ? (r.rank === 1 ? '1er' : `${r.rank}e`) : '—'}</div>
                     <div style={{ fontSize: 18, fontWeight: 800 }}>{r.name}</div>
                     <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>score qualité /100</div>
+                    {r.prepN > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-600, #4b5563)', marginTop: 2 }}>⏱ Préparation moy. {dur(r.prepSum / r.prepN)} · {r.prepN} tournées</div>}
                     {r.ratingN > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginTop: 2 }}>★ {(r.ratingSum / r.ratingN).toFixed(1).replace('.', ',')} / 5 · {r.ratingN} avis clients</div>}
                     {r.stars1.length > 0 && <button type="button" onClick={() => setOpen(open && open.n === r.name && open.k === 'star' ? null : { n: r.name, k: 'star' })} aria-expanded={!!(open && open.n === r.name && open.k === 'star')} style={{ marginTop: 4, background: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: 999, padding: '2px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{r.stars1.length} avis à 1 étoile</button>}
                   </div>
@@ -200,7 +209,7 @@ export default function DashboardTransport({ carrier = false }) {
           })}
         </div>
         <p style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 10, lineHeight: 1.5 }}>
-          <AlertTriangle size={12} style={{ verticalAlign: -2 }} /> Les retards se calculent sur les tournées dont le créneau a été enregistré (envoi ou « Enregistrer les créneaux » du plan de chargement) et dont l'heure Urbantz est connue. « Non rentrées le jour même » compte les jours passés (hors week-end) où la tournée avait des colis à retourner. Les colis en attente excluent ceux réceptionnés dans REFLEX ou livrés. Les pourcentages sont : départs et arrivées en retard sur les tournées avec créneau, non rentrées sur les tournées attendues, colis à rapatrier sur les colis à retourner (depuis le 16/11). Score qualité (sur 100) = 100 moins la moyenne pondérée de six défauts : départs en retard 30 %, arrivées en retard 15 %, non rentrées 15 %, colis à rapatrier 10 %, avis à 1 étoile 20 % (20 % d'avis à 1 étoile = défaut maximal), note client moyenne 10 % (5/5 = aucun défaut). Un critère sans donnée est ignoré ; le classement va du meilleur score au moins bon. Couleur de l'anneau : vert à partir de 90, jaune de 80 à 89, orange de 70 à 79, rouge en dessous de 70. Les tournées non reconnues sont signalées dans « Tournées de référence ».
+          <AlertTriangle size={12} style={{ verticalAlign: -2 }} /> Les retards se calculent sur les tournées dont le créneau a été enregistré (envoi ou « Enregistrer les créneaux » du plan de chargement) et dont l'heure Urbantz est connue. « Non rentrées le jour même » compte les jours passés (hors week-end) où la tournée avait des colis à retourner. Les colis en attente excluent ceux réceptionnés dans REFLEX ou livrés. Les pourcentages sont : départs et arrivées en retard sur les tournées avec créneau, non rentrées sur les tournées attendues, colis à rapatrier sur les colis à retourner (depuis le 16/11). Score qualité (sur 100) = 100 moins la moyenne pondérée de six défauts : départs en retard 30 %, arrivées en retard 15 %, non rentrées 15 %, colis à rapatrier 10 %, avis à 1 étoile 20 % (20 % d'avis à 1 étoile = défaut maximal), note client moyenne 10 % (5/5 = aucun défaut). Un critère sans donnée est ignoré ; le classement va du meilleur score au moins bon. Couleur de l'anneau : vert à partir de 90, jaune de 80 à 89, orange de 70 à 79, rouge en dessous de 70. Temps de préparation = du premier scan au départ du dépôt (les durées de plus de 3 h, aberrantes, sont écartées de la moyenne). Les tournées non reconnues sont signalées dans « Tournées de référence ».
         </p>
       </>}
       </div>
