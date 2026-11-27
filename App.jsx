@@ -30,6 +30,7 @@ import Notifications from './Notifications'
 import Defaillances from './Defaillances'
 import Checklist from './Checklist'
 import PlanChargement from './PlanChargement'
+import Groupages from './Groupages'
 import PartnerLayout from './PartnerLayout'
 
 // Détermine la route d'accueil selon le rôle du profil
@@ -117,6 +118,7 @@ export default function App() {
         <Route path="email-recipients" element={<EmailRecipients />} />
         <Route path="checklist" element={<Checklist />} />
         <Route path="plan-chargement" element={<PlanChargement />} />
+        <Route path="groupages" element={<Groupages />} />
         <Route path="colis-retour" element={<Navigate to="/admin/suivi-tournees" replace />} />
         <Route path="demandes" element={<Demandes />} />
         <Route path="notifications" element={<Notifications />} />

@@ -30,6 +30,7 @@ const navSections = [
       { to: '/admin/upload', label: 'Importer un PDF', icon: <Upload size={16} /> },
       { to: '/admin/preparation-tournees', label: 'Préparation des tournées', icon: <ClipboardList size={16} /> },
       { to: '/admin/plan-chargement', label: 'Plan de chargement', icon: <LayoutGrid size={16} /> },
+      { to: '/admin/groupages', label: 'Groupages', icon: <Truck size={16} /> },
       { to: '/admin/warehouse', label: 'Plan entrepôt', icon: <Map size={16} /> },
       { to: '/admin/anomalies-preparation', label: 'Anomalies préparation', icon: <PackageX size={16} /> },
       { to: '/admin/reprises', label: 'Reprises', icon: <RotateCcw size={16} /> },
