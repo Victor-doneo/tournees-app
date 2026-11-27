@@ -60,7 +60,8 @@ const limit = addDays(todayParis, -OVERDUE_DAYS)
   const { data: late, error: le } = await qy.or('reflex_recv_status.is.null,reflex_recv_status.neq.livre').limit(CHECK_ALL ? 3000 : 500)
   if (le) console.log('Demandes de retard ignorées (migration supabase_migration_reflex_verification.sql lancée ?) :', le.message)
   else for (const l of late || []) {
-    if (CHECK_ALL && l.reflex_recv_checked_at && Date.now() - Date.parse(l.reflex_recv_checked_at) < 6 * 3600e3) continue
+    // contrôlé depuis moins de 6 h : sauté, sauf s'il est déjà vu « réceptionné » (sa demande à DONEO n'est peut-être pas encore créée, sans nouvelle recherche REFLEX)
+    if (CHECK_ALL && l.reflex_recv_status !== 'receptionne' && l.reflex_recv_checked_at && Date.now() - Date.parse(l.reflex_recv_checked_at) < 6 * 3600e3) continue
     const bp = /contre reprise/i.test(l.reason || '') ? String(l.barcode).replace(/^7/, '').trim() : String(l.barcode).trim()
     if (!lateGroups.has(bp)) lateGroups.set(bp, [])
     lateGroups.get(bp).push(l)
