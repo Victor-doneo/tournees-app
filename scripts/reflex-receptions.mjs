@@ -45,10 +45,11 @@ const items = []
 //    s'il n'y est pas, demande « Autres » sur le BP : « Vérifier que le colis n'est pas revenu » (une seule par colis grâce à overdue_demande_id) ──
 const OVERDUE_DAYS = 3, OVERDUE_FROM = '2026-11-16'
 const lateGroups = new Map()
-// CHECK_ALL=1 : contrôle REFLEX de TOUS les colis non rapatriés (jours passés depuis le 16/11), quel que soit leur âge ; le statut est enregistré
-// (réceptionné / non réceptionné) sans créer de demande (sauf WITH_DEMANDES=1 : alors seulement pour les colis de plus de OVERDUE_DAYS jours sans demande).
+// Contrôle REFLEX de TOUS les colis non rapatriés (jours passés depuis le 16/11), quel que soit leur âge. Le statut est enregistré, puis :
+//  - colis réceptionné dans REFLEX mais pas dans Superflash -> demande à DONEO (quel que soit l'âge, une seule par colis)
+//  - colis non réceptionné -> demande « Vérifier que le colis n'est pas revenu » seulement au-delà de OVERDUE_DAYS jours
 // CHECK_LIMIT=n : nombre de BP par passage (25 par défaut) ; les BP contrôlés depuis moins de 6 h sont sautés, donc on peut relancer jusqu'à épuisement.
-const CHECK_ALL = !!process.env.CHECK_ALL
+const CHECK_ALL = !process.env.NO_CHECK_ALL // contrôle de tous les colis non rapatriés des jours passés (NO_CHECK_ALL=1 : ancien comportement, seulement > OVERDUE_DAYS jours)
 const CHECK_LIMIT = Number(process.env.CHECK_LIMIT) || 25
 const todayParis = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date())
 const limit = addDays(todayParis, -OVERDUE_DAYS)
@@ -510,9 +511,8 @@ if (lateCheck.length) {
         : { reflex_recv_status: 'manquant', reflex_recv_checked_at: new Date().toISOString() }).in('id', g.labels.map(l => l.id))
     }
     console.log(`Contrôle REFLEX global : ${lateCheck.filter(g => g.found).length} BP réceptionné(s), ${lateCheck.filter(g => !g.found && !g.error).length} non réceptionné(s), ${lateCheck.filter(g => g.error).length} en erreur, sur ${lateGroups.size} BP à contrôler`)
-    // demandes : seulement pour les colis assez anciens et sans demande
-    // (WITH_DEMANDES=1 pour les créer ; par défaut le contrôle global n'enregistre que le statut, sans demande)
-    for (const g of lateCheck) g.labels = process.env.WITH_DEMANDES ? g.labels.filter(l => l.task_date <= limit && !l.overdue_demande_id) : []
+    // demandes : réceptionné REFLEX -> tous les colis sans demande ; non réceptionné -> seulement les colis assez anciens et sans demande
+    for (const g of lateCheck) g.labels = g.labels.filter(l => !l.overdue_demande_id && (g.found || l.task_date <= limit))
   }
   for (const g of lateCheck) {
     if (g.error) continue // contrôle REFLEX impossible : on réessaiera au prochain passage
