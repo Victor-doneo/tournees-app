@@ -37,7 +37,7 @@ export default function ColisNonRapatries() {
         .select('id, name, tours_references(name, name_supplier), delivery_dates!inner(delivery_date)')
         .gte('delivery_dates.delivery_date', FROM).lt('delivery_dates.delivery_date', today).order('id'))
       const l = await fetchAll(() => supabase.from('return_labels')
-        .select('id, task_date, tour_code, round_name, barcode, reason, received_at, reflex_recv_status')
+        .select('id, task_date, tour_code, round_name, barcode, reason, received_at, reflex_recv_status, reflex_recv_checked_at')
         .gte('task_date', FROM).lt('task_date', today).is('received_at', null).order('id'))
       setTours(t); setLabels(l)
     } catch (e) { setError(e.message || String(e)) }
@@ -75,11 +75,10 @@ export default function ColisNonRapatries() {
 
   return (
     <>
-      <div className="page-header"><h1>Colis non rapatriés</h1></div>
-      <div className="page-content">
-        <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 12 }}>
-          Colis à retourner dont la tournée est passée (depuis le 16/11, jour même exclu), sans accusé de réception et non réceptionnés dans REFLEX.
-        </p>
+      <div className="page-header">
+        <div><h2 className="page-title">Colis non rapatriés</h2><p className="page-subtitle">Colis à retourner dont la tournée est passée, non réceptionnés (hors jour même)</p></div>
+      </div>
+      <div className="page-body">
         {error && <div className="card" style={{ padding: 12, color: 'var(--red, #b91c1c)', marginBottom: 12 }}>{error}</div>}
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
           <div className="card" style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -104,10 +103,10 @@ export default function ColisNonRapatries() {
             <div key={`${g.day}|${g.code}`} className="card" style={{ marginBottom: 10, overflow: 'hidden' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--gray-50, #f9fafb)', borderBottom: '1px solid var(--gray-200, #e5e7eb)' }}>
                 <div><b>{g.code}</b> · {fr(g.day)} · <span style={{ color: 'var(--gray-500)' }}>{g.supplier}</span></div>
-                <span style={{ fontSize: 12, fontWeight: 700, background: g.items[0].age > 3 ? '#fee2e2' : '#fef3c7', color: g.items[0].age > 3 ? '#991b1b' : '#92400e', borderRadius: 999, padding: '2px 10px' }}>{g.items.length} colis · J+{g.items[0].age}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, background: g.items[0].age >= 3 ? '#fee2e2' : '#fef3c7', color: g.items[0].age >= 3 ? '#991b1b' : '#92400e', borderRadius: 999, padding: '2px 10px' }}>{g.items.length} colis · J+{g.items[0].age}</span>
               </div>
               <div className="table-wrapper"><table><thead><tr><th>BP</th><th>Motif</th><th>REFLEX</th></tr></thead><tbody>
-                {g.items.map(r => <tr key={r.id}><td style={{ fontFamily: 'monospace' }}>{r.barcode}</td><td>{r.reason || '—'}</td><td>{r.reflex_recv_status === 'manquant' || r.reflex_recv_status === 'introuvable' ? 'Non réceptionné' : 'Pas encore vérifié'}</td></tr>)}
+                {g.items.map(r => <tr key={r.id}><td style={{ fontFamily: 'monospace' }}>{r.barcode}</td><td>{r.reason || '—'}</td><td>{r.reflex_recv_status === 'manquant' || r.reflex_recv_status === 'introuvable' ? `Non réceptionné${r.reflex_recv_checked_at ? ' (contrôlé le ' + new Date(r.reflex_recv_checked_at).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + ')' : ''}` : 'Pas encore vérifié'}</td></tr>)}
               </tbody></table></div>
             </div>
           ))}

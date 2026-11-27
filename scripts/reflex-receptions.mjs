@@ -45,13 +45,21 @@ const items = []
 //    s'il n'y est pas, demande « Autres » sur le BP : « Vérifier que le colis n'est pas revenu » (une seule par colis grâce à overdue_demande_id) ──
 const OVERDUE_DAYS = 3, OVERDUE_FROM = '2026-11-16'
 const lateGroups = new Map()
+// CHECK_ALL=1 : contrôle REFLEX de TOUS les colis non rapatriés (jours passés depuis le 16/11), quel que soit leur âge ; le statut est enregistré
+// (réceptionné / non réceptionné) mais les demandes ne sont créées que pour les colis de plus de OVERDUE_DAYS jours, comme d'habitude.
+// CHECK_LIMIT=n : nombre de BP par passage (25 par défaut) ; les BP contrôlés depuis moins de 6 h sont sautés, donc on peut relancer jusqu'à épuisement.
+const CHECK_ALL = !!process.env.CHECK_ALL
+const CHECK_LIMIT = Number(process.env.CHECK_LIMIT) || 25
+const todayParis = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date())
+const limit = addDays(todayParis, -OVERDUE_DAYS)
 {
-  const limit = addDays(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date()), -OVERDUE_DAYS)
-  const { data: late, error: le } = await sb.from('return_labels').select('id, barcode, reason, tour_code, task_date, reflex_recv_status, reflex_recv_line')
-    .is('received_at', null).is('overdue_demande_id', null).gte('task_date', OVERDUE_FROM).lte('task_date', limit)
-    .or('reflex_recv_status.is.null,reflex_recv_status.neq.livre').limit(500)
+  let qy = sb.from('return_labels').select('id, barcode, reason, tour_code, task_date, reflex_recv_status, reflex_recv_line, reflex_recv_checked_at, overdue_demande_id').is('received_at', null).gte('task_date', OVERDUE_FROM)
+  if (CHECK_ALL) qy = qy.lt('task_date', todayParis).order('reflex_recv_checked_at', { ascending: true, nullsFirst: true })
+  else qy = qy.is('overdue_demande_id', null).lte('task_date', limit)
+  const { data: late, error: le } = await qy.or('reflex_recv_status.is.null,reflex_recv_status.neq.livre').limit(CHECK_ALL ? 3000 : 500)
   if (le) console.log('Demandes de retard ignorées (migration supabase_migration_reflex_verification.sql lancée ?) :', le.message)
   else for (const l of late || []) {
+    if (CHECK_ALL && l.reflex_recv_checked_at && Date.now() - Date.parse(l.reflex_recv_checked_at) < 6 * 3600e3) continue
     const bp = /contre reprise/i.test(l.reason || '') ? String(l.barcode).replace(/^7/, '').trim() : String(l.barcode).trim()
     if (!lateGroups.has(bp)) lateGroups.set(bp, [])
     lateGroups.get(bp).push(l)
@@ -435,7 +443,7 @@ try {
     } catch (e) { console.log(`Vérif BP ${bp} : erreur ${e.message}`); await shot(`erreur-verif-${bp}`); await closeResults() }
   }
   // Retours en retard : le colis est-il déjà réceptionné dans REFLEX ? (ligne de ARTICLE_USER datée >= date de la tournée)
-  for (const [bp, labels] of [...lateGroups].slice(0, 25)) {
+  for (const [bp, labels] of [...lateGroups].slice(0, CHECK_ALL ? CHECK_LIMIT : 25)) {
     try {
       // Déjà vu « réceptionné » dans REFLEX par un contrôle précédent : pas besoin de rechercher à nouveau
       if (labels.every(l => l.reflex_recv_status === 'receptionne')) {
@@ -493,8 +501,21 @@ if (vOut.length) {
 let lateDemandes = 0, lateInReflex = 0
 if (lateCheck.length) {
   const creator = process.env.DEMANDE_USER_ID || (await sb.from('users').select('id').eq('role', 'admin').limit(1)).data?.[0]?.id
+  if (CHECK_ALL) {
+    // statut REFLEX enregistré pour tous les colis contrôlés (affiché dans « Colis non rapatriés »)
+    for (const g of lateCheck) {
+      if (g.error) continue
+      await sb.from('return_labels').update(g.found
+        ? { reflex_recv_status: 'receptionne', reflex_recv_checked_at: new Date().toISOString(), reflex_recv_line: g.date || 'Réceptionné REFLEX' }
+        : { reflex_recv_status: 'manquant', reflex_recv_checked_at: new Date().toISOString() }).in('id', g.labels.map(l => l.id))
+    }
+    console.log(`Contrôle REFLEX global : ${lateCheck.filter(g => g.found).length} BP réceptionné(s), ${lateCheck.filter(g => !g.found && !g.error).length} non réceptionné(s), ${lateCheck.filter(g => g.error).length} en erreur, sur ${lateGroups.size} BP à contrôler`)
+    // demandes : seulement pour les colis assez anciens et sans demande
+    for (const g of lateCheck) g.labels = g.labels.filter(l => l.task_date <= limit && !l.overdue_demande_id)
+  }
   for (const g of lateCheck) {
     if (g.error) continue // contrôle REFLEX impossible : on réessaiera au prochain passage
+    if (!g.labels.length) continue
     const ids = g.labels.map(l => l.id)
     const tours = [...new Set(g.labels.map(l => `${l.tour_code || '—'} du ${l.task_date.split('-').reverse().join('.')}`))].join(', ')
     if (g.found) {
