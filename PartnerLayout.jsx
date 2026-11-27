@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useDemandeNotifications } from './demandeNotifications'
-import { LogOut, ClipboardList, AlertTriangle, LayoutGrid, Mail, Activity, Search, Bell, BarChart3 } from 'lucide-react'
+import { LogOut, ClipboardList, AlertTriangle, LayoutGrid, Mail, Activity, Search, Bell, BarChart3, PackageX } from 'lucide-react'
 
 export default function PartnerLayout() {
   const { profile, signOut } = useAuth()
@@ -68,6 +68,12 @@ export default function PartnerLayout() {
             <NavLink to="/partner/suivi-tournees" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
               <Activity size={16} />
               Suivi des tournées
+            </NavLink>
+          )}
+          {profile?.can_view_tour_tracking && (
+            <NavLink to="/partner/colis-non-rapatries" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+              <PackageX size={16} />
+              Colis non rapatriés
             </NavLink>
           )}
           <NavLink to="/partner/search-parcel" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>

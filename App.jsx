@@ -5,6 +5,7 @@ import AdminLayout from './AdminLayout'
 import OperatorLayout from './OperatorLayout'
 import Dashboard from './Dashboard'
 import DashboardTransport from './DashboardTransport'
+import ColisNonRapatries from './ColisNonRapatries'
 import Tours from './Tours'
 import Users from './Users'
 import SearchParcel from './SearchParcel'
@@ -85,6 +86,7 @@ export default function App() {
         <Route path="preparation-tournees" element={<PreparationTournees />} />
         <Route path="warehouse" element={<WarehousePlan />} />
         <Route path="suivi-tournees" element={<SuiviTournees />} />
+        <Route path="colis-non-rapatries" element={<ColisNonRapatries />} />
         <Route path="anomalies-reception" element={<AnomaliesReception />} />
         <Route path="anomalies-preparation" element={<AnomaliesPreparation />} />
         <Route path="email-recipients" element={<EmailRecipients />} />
@@ -113,6 +115,7 @@ export default function App() {
         <Route path="search-parcel" element={<SearchParcel />} />
         <Route path="suivi-tournees" element={<TrackingRoute><SuiviTournees readOnly /></TrackingRoute>} />
         <Route path="dashboard-transport" element={<TrackingRoute><DashboardTransport /></TrackingRoute>} />
+        <Route path="colis-non-rapatries" element={<TrackingRoute><ColisNonRapatries /></TrackingRoute>} />
         <Route path="plan-chargement" element={<LoadingPlanRoute><PlanChargement /></LoadingPlanRoute>} />
         <Route path="destinataires-plan" element={<LoadingPlanRoute><EmailRecipients only="plan" /></LoadingPlanRoute>} />
       </Route>

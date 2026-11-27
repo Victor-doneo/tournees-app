@@ -41,6 +41,7 @@ const navSections = [
       { to: '/admin/checklist', label: 'Checklist', icon: <ListChecks size={16} /> },
       { to: '/admin/tours', label: 'Tournées', icon: <Truck size={16} /> },
       { to: '/admin/suivi-tournees', label: 'Suivi des tournées', icon: <Activity size={16} /> },
+      { to: '/admin/colis-non-rapatries', label: 'Colis non rapatriés', icon: <PackageX size={16} /> },
       { to: '/admin/inventaire', label: 'Inventaire', icon: <ClipboardCheck size={16} /> },
       { to: '/admin/anomalies-reception', label: 'Anomalies réception', icon: <ShieldAlert size={16} /> },
       { to: '/admin/search-tours', label: 'Recherche tournées', icon: <FileSearch size={16} /> },
