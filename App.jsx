@@ -119,12 +119,9 @@ export default function App() {
         <Route path="plan-chargement" element={<PlanChargement />} />
         <Route path="colis-retour" element={<Navigate to="/admin/suivi-tournees" replace />} />
         <Route path="demandes" element={<Demandes />} />
-        <Route path="compte" element={<AccountSettings />} />
-        <Route path="comptes-transporteurs" element={<CarrierManagerRoute><Users carriersOnly /></CarrierManagerRoute>} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="defaillances" element={<Defaillances />} />
         <Route path="scan/:tourId" element={<ScanPage />} />
-        <Route path="compte" element={<AccountSettings />} />
       </Route>
 
       {/* Operator routes */}
@@ -133,6 +130,7 @@ export default function App() {
         <Route path="inventaire" element={<Inventaire />} />
         <Route path="search-parcel" element={<SearchParcel />} />
         <Route path="scan/:tourId" element={<ScanPage />} />
+        <Route path="compte" element={<AccountSettings />} />
       </Route>
 
       {/* Partner routes — accès restreint au suivi des tâches et à la recherche colis */}
@@ -141,6 +139,8 @@ export default function App() {
         <Route path="notifications" element={<Notifications />} />
         <Route path="defaillances" element={<Defaillances />} />
         <Route path="search-parcel" element={<SearchParcel />} />
+        <Route path="compte" element={<AccountSettings />} />
+        <Route path="comptes-transporteurs" element={<CarrierManagerRoute><Users carriersOnly /></CarrierManagerRoute>} />
         <Route path="suivi-tournees" element={<TrackingRoute><SuiviTournees readOnly /></TrackingRoute>} />
         <Route path="dashboard-transport" element={<TrackingRoute><DashboardTransport /></TrackingRoute>} />
         <Route path="colis-non-rapatries" element={<TrackingRoute><ColisNonRapatries /></TrackingRoute>} />
