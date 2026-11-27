@@ -51,37 +51,24 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         model: Deno.env.get('ANTHROPIC_MODEL') || 'claude-sonnet-5-5',
         max_tokens: 4000,
-        tools: [{
-          name: 'enregistrer_lignes',
-          description: 'Enregistre les lignes du tableau',
-          input_schema: {
-            type: 'object',
-            properties: { lignes: { type: 'array', items: { type: 'object', properties: {
-              date_chargement: { type: 'string', description: 'Première colonne (CharDeDat), au format AAAA-MM-JJ' },
-              groupage: { type: 'string', description: 'Colonne « Num. Groupage », chiffres exacts' },
-              transporteur: { type: 'string', description: 'Colonne « Nom du transporteur », en majuscules telles qu\'écrites' },
-              poids: { type: 'number', description: 'Colonne « Tot.EUT », nombre (virgule décimale -> point)' },
-            }, required: ['date_chargement', 'groupage', 'transporteur'] } } },
-            required: ['lignes'],
-          },
-        }],
-        tool_choice: { type: 'tool', name: 'enregistrer_lignes' },
         messages: [{ role: 'user', content: [
           { type: 'image', source: { type: 'base64', media_type: (img.contentType || 'image/png').split(';')[0], data: img.contentBytes } },
-          { type: 'text', text: 'Capture d\'un tableau de préparation. Pour CHAQUE ligne de données, relève : la date de la première colonne (CharDeDat, jj/mm/aaaa), le numéro de groupage, le nom du transporteur et le poids (Tot.EUT). Recopie les valeurs exactement, sans rien inventer ; ignore la ligne de filtres sous l\'en-tête.' },
+          { type: 'text', text: 'Capture d\'un tableau de préparation. Pour CHAQUE ligne de données, relève : la date de la première colonne (CharDeDat, jj/mm/aaaa), le numéro de groupage, le nom du transporteur et le poids (Tot.EUT). Recopie les valeurs exactement, sans rien inventer ; ignore la ligne de filtres sous l\'en-tête. Réponds UNIQUEMENT par un tableau JSON, sans texte autour ni balises, au format : [{"date_chargement":"AAAA-MM-JJ","groupage":"210807","transporteur":"MAUFFREY","poids":32.8}] (poids = colonne Tot.EUT, nombre avec point décimal).' },
         ] }],
       }),
     })
     if (!r.ok) return json({ error: 'Lecture de l\'image impossible', detail: (await r.text()).slice(0, 500) }, 502)
     const out = await r.json()
-    const lignes: { date_chargement: string; groupage: string; transporteur: string; poids?: number }[] =
-      out.content?.find((c: { type: string }) => c.type === 'tool_use')?.input?.lignes || []
+    const txt: string = (out.content || []).filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('')
+    let lignes: { date_chargement: string; groupage: string; transporteur: string; poids?: number }[] = []
+    try { lignes = JSON.parse(txt.slice(txt.indexOf('['), txt.lastIndexOf(']') + 1)) } catch { return json({ error: 'Réponse illisible', detail: txt.slice(0, 500) }, 502) }
 
     // regroupement par groupage + date (un groupage = un transporteur ; plusieurs lignes = poids additionnés)
     const m = new Map<string, { groupage: string; date_chargement: string; transporteur: string; poids: number }>()
     for (const l of lignes) {
       const g = String(l.groupage || '').replace(/\D/g, '')
-      const d = String(l.date_chargement || '').slice(0, 10)
+      let d = String(l.date_chargement || '').trim().slice(0, 10)
+      const fr = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (fr) d = `${fr[3]}-${fr[2].padStart(2, '0')}-${fr[1].padStart(2, '0')}` // jj/mm/aaaa tolérée
       if (!g || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue
       const k = `${g}|${d}`
       const cur = m.get(k) || { groupage: g, date_chargement: d, transporteur: String(l.transporteur || '').trim(), poids: 0 }
