@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from './supabase'
 import { Truck, Clock, PackageX, AlertTriangle } from 'lucide-react'
 
@@ -38,9 +39,13 @@ export default function DashboardTransport() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [open, setOpen] = useState(null)
+  const navigate = useNavigate()
+  const base = useLocation().pathname.startsWith('/partner') ? '/partner' : '/admin'
+  const goParcels = supplier => navigate(`${base}/colis-non-rapatries${supplier ? '?supplier=' + encodeURIComponent(supplier) : ''}`)
 
-  useEffect(() => { load() }, [from, to])
-  async function load() {
+  // Une réponse tardive d'un ancien filtre ne doit pas écraser la plus récente (sinon l'écran montre tout le périmètre)
+  useEffect(() => { let stale = false; load(() => stale); return () => { stale = true } }, [from, to])
+  async function load(isStale) {
     setLoading(true); setError('')
     try {
       const t = await fetchAll(() => supabase.from('tours')
@@ -51,9 +56,10 @@ export default function DashboardTransport() {
       let rt = []
       const selRt = cols => fetchAll(() => supabase.from('delivery_ratings').select(cols).gte('task_date', from).lte('task_date', to).order('task_id'))
       try { rt = await selRt('task_id, task_date, tour_code, task_ref, score, comment, barcodes') } catch { try { rt = await selRt('task_id, task_date, tour_code, task_ref, score, comment') } catch { rt = [] } } // table absente tant que la migration n'est pas lancée
+      if (isStale()) return
       setTours(t); setLabels(l); setRatings(rt)
-    } catch (e) { setError(e.message || String(e)) }
-    setLoading(false)
+    } catch (e) { if (!isStale()) setError(e.message || String(e)) }
+    if (!isStale()) setLoading(false)
   }
 
   const stats = useMemo(() => {
@@ -111,8 +117,8 @@ export default function DashboardTransport() {
   }, [tours, labels, ratings, today])
 
   const pct = (a, b) => (b ? `${Math.round(100 * a / b)} %` : '—')
-  const Card = ({ icon, label, value, sub, color }) => (
-    <div className="card" style={{ padding: 16, flex: '1 1 200px' }}>
+  const Card = ({ icon, label, value, sub, color, onClick }) => (
+    <div className="card" style={{ padding: 16, flex: '1 1 200px', cursor: onClick ? 'pointer' : undefined }} {...(onClick ? { onClick, role: 'link', tabIndex: 0, onKeyDown: e => { if (e.key === 'Enter') onClick() }, title: 'Voir la liste des colis non rapatriés' } : {})}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--gray-500)', fontWeight: 600 }}>{icon}{label}</div>
       <div style={{ fontSize: 28, fontWeight: 800, color: color || 'var(--gray-800)', marginTop: 6 }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{sub}</div>}
@@ -136,7 +142,7 @@ export default function DashboardTransport() {
           <Card icon={<Clock size={14} />} label="Départs en retard" value={stats.tot.depRetard} sub={`> ${DEPART_RETARD_MIN} min après le créneau · ${stats.tot.withSlot} tournées avec créneau`} color={stats.tot.depRetard ? 'var(--red)' : undefined} />
           <Card icon={<Clock size={14} />} label="Arrivées en retard" value={stats.tot.arrRetard} sub={`premier scan > ${ARRIVEE_RETARD_MIN} min après le créneau`} color={stats.tot.arrRetard ? 'var(--red)' : undefined} />
           <Card icon={<Truck size={14} />} label="Non rentrées le jour même" value={pct(stats.tot.notBack, stats.tot.expected)} sub={`${stats.tot.notBack} sur ${stats.tot.expected} tournées attendues`} />
-          <Card icon={<PackageX size={14} />} label="Colis en attente de rapatriement" value={stats.tot.parcels} sub="depuis le 16/11 · hors réceptionnés REFLEX et livrés" color={stats.tot.parcels ? 'var(--orange, #d97706)' : undefined} />
+          <Card icon={<PackageX size={14} />} label="Colis en attente de rapatriement" value={stats.tot.parcels} sub="depuis le 16/11 · hors réceptionnés REFLEX et livrés" color={stats.tot.parcels ? 'var(--orange, #d97706)' : undefined} onClick={() => goParcels()} />
         </div>
         {stats.rows.length === 0 && <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--gray-400)' }}>Aucune tournée sur la période</div>}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16 }}>
@@ -182,6 +188,7 @@ export default function DashboardTransport() {
                     {open.k === 'arr' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : créneau {x.slot}, premier scan {x.real} (+{x.d} min)</div>)}
                     {open.k === 'nb' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : {x.back}</div>)}
                     {open.k === 'star' && list.map((x, i) => <div key={i} style={{ marginBottom: 6 }}>{fr(x.day)} — <b>{x.code}</b> · tâche {x.ref || '—'}{x.bps.length ? <> · BP : {x.bps.join(', ')}</> : null}{x.comment ? <div style={{ color: 'var(--gray-500)', fontStyle: 'italic' }}>« {x.comment} »</div> : null}</div>)}
+                    {open.k === 'pc' && <div style={{ marginBottom: 6 }}><button type="button" className="btn btn-secondary" style={{ fontSize: 12, padding: '3px 10px' }} onClick={() => goParcels(r.name)}>Voir dans « Colis non rapatriés »</button></div>}
                     {open.k === 'pc' && list.map((x, i) => <div key={i}>{fr(x.day)} — <b>{x.code}</b> : BP {x.bp}</div>)}
                   </div>) : null })()}
               </div>

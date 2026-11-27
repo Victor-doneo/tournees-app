@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
+import { useSearchParams } from 'react-router-dom'
 import { PackageX, Download } from 'lucide-react'
 
 const FROM = '2026-11-16' // début du suivi
@@ -25,7 +26,8 @@ export default function ColisNonRapatries() {
   const [tours, setTours] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [supplier, setSupplier] = useState('')
+  const [params] = useSearchParams()
+  const [supplier, setSupplier] = useState(params.get('supplier') || '')
   const [q, setQ] = useState('')
   const [minAge, setMinAge] = useState(0)
 
