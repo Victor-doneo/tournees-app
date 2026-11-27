@@ -7,6 +7,7 @@ import { Truck, Clock, PackageX, AlertTriangle } from 'lucide-react'
 const DEPART_RETARD_MIN = 60 // « Départ en retard » : départ réel du dépôt > créneau + 1 h
 const ARRIVEE_RETARD_MIN = 10 // « Arrivée en retard » : premier scan > créneau + 10 min
 const PARCELS_FROM = '2026-11-16' // début du suivi : colis à rapatrier et tournées non rentrées ignorent les jours précédents
+const NOT_BACK_MAX_DEPART = 6 * 60 + 30 // « Non rentrée » : seules comptent les tournées dont le départ prévu du dépôt est à 06h30 ou avant
 const EXCLUDED_RECV = ['receptionne', 'livre'] // colis déjà réceptionné dans REFLEX / livré : pas en attente de rapatriement
 
 const parisDay = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date(d))
@@ -49,7 +50,7 @@ export default function DashboardTransport() {
     setLoading(true); setError('')
     try {
       const t = await fetchAll(() => supabase.from('tours')
-        .select('id, name, heure_retour, loading_slot, urbantz_depart_reel, urbantz_premier_scan, tours_references(name, name_supplier), delivery_dates!inner(delivery_date)')
+        .select('id, name, heure_retour, loading_slot, urbantz_hub_depart, urbantz_depart_reel, urbantz_premier_scan, tours_references(name, name_supplier), delivery_dates!inner(delivery_date)')
         .gte('delivery_dates.delivery_date', from).lte('delivery_dates.delivery_date', to).order('id'))
       const l = await fetchAll(() => supabase.from('return_labels')
         .select('id, task_date, tour_code, barcode, received_at, reflex_recv_status').gte('task_date', from).lte('task_date', to).order('id'))
@@ -80,7 +81,9 @@ export default function DashboardTransport() {
       }
       // Tournée attendue = elle a des colis à retourner ; jours passés seulement, hors samedi/dimanche
       const dow = new Date(day + 'T12:00:00').getDay()
-      if (day >= PARCELS_FROM && day < today && dow !== 6 && dow !== 0 && withLabels.has(`${day}|${codeOf(t)}`)) {
+      const planned = String(t.urbantz_hub_depart || t.loading_slot || '').match(/^(\d{1,2}):(\d{2})/) // départ prévu (Urbantz), à défaut le créneau de chargement
+      const earlyDepart = !planned || Number(planned[1]) * 60 + Number(planned[2]) <= NOT_BACK_MAX_DEPART // départ prévu inconnu : on compte la tournée
+      if (day >= PARCELS_FROM && day < today && dow !== 6 && dow !== 0 && earlyDepart && withLabels.has(`${day}|${codeOf(t)}`)) {
         s.expected++
         const backSameDay = t.heure_retour && parisDay(t.heure_retour) <= day
         if (!backSameDay) { s.notBack++; s.notBackList.push({ day, code: codeOf(t), back: t.heure_retour ? `${fr(parisDay(t.heure_retour))} ${hhmm(t.heure_retour)}` : 'pas rentrée' }) }
@@ -141,7 +144,7 @@ export default function DashboardTransport() {
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
           <Card icon={<Clock size={14} />} label="Départs en retard" value={stats.tot.depRetard} sub={`> ${DEPART_RETARD_MIN} min après le créneau · ${stats.tot.withSlot} tournées avec créneau`} color={stats.tot.depRetard ? 'var(--red)' : undefined} />
           <Card icon={<Clock size={14} />} label="Arrivées en retard" value={stats.tot.arrRetard} sub={`premier scan > ${ARRIVEE_RETARD_MIN} min après le créneau`} color={stats.tot.arrRetard ? 'var(--red)' : undefined} />
-          <Card icon={<Truck size={14} />} label="Non rentrées le jour même" value={pct(stats.tot.notBack, stats.tot.expected)} sub={`${stats.tot.notBack} sur ${stats.tot.expected} tournées attendues`} />
+          <Card icon={<Truck size={14} />} label="Non rentrées le jour même" value={pct(stats.tot.notBack, stats.tot.expected)} sub={`${stats.tot.notBack} sur ${stats.tot.expected} tournées (départ prévu ≤ 6h30) attendues`} />
           <Card icon={<PackageX size={14} />} label="Colis en attente de rapatriement" value={stats.tot.parcels} sub="depuis le 16/11 · hors réceptionnés REFLEX et livrés" color={stats.tot.parcels ? 'var(--orange, #d97706)' : undefined} onClick={() => goParcels()} />
         </div>
         {stats.rows.length === 0 && <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--gray-400)' }}>Aucune tournée sur la période</div>}
