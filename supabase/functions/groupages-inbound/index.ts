@@ -1,6 +1,9 @@
 // Fonction Edge : réception du mail quotidien « Préparation du jour » (tableau collé en IMAGE).
-// Appelée par Power Automate (POST JSON) avec l'en-tête  x-ingest-secret: <INGEST_SECRET>.
-// Corps : { subject, receivedDateTime, attachments: [{ name, contentType, contentBytes(base64) }] }
+// Deux façons de l'appeler :
+//  1) Resend « réception d'e-mails » (le mail est transféré à l'adresse de réception Resend) : webhook email.received, URL de la forme
+//     .../functions/v1/groupages-inbound?s=<INGEST_SECRET> ; la fonction récupère les pièces jointes via l'API Resend (secret RESEND_API_KEY).
+//  2) Power Automate (POST JSON) avec l'en-tête  x-ingest-secret: <INGEST_SECRET>.
+//     Corps : { subject, receivedDateTime, attachments: [{ name, contentType, contentBytes(base64) }] }
 // L'image du tableau est lue par Claude (vision) -> lignes { groupage, transporteur, date_chargement, poids } -> table groupages
 // (upsert par groupage + date de chargement ; la saisie admin — heures, CMR — n'est jamais écrasée).
 // Secrets à définir (Supabase > Edge Functions > Secrets) : INGEST_SECRET, ANTHROPIC_API_KEY (option : ANTHROPIC_MODEL).
@@ -12,10 +15,30 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST uniquement' }, 405)
   const secret = Deno.env.get('INGEST_SECRET')
-  if (!secret || req.headers.get('x-ingest-secret') !== secret) return json({ error: 'Non autorisé' }, 401)
+  const given = req.headers.get('x-ingest-secret') || new URL(req.url).searchParams.get('s')
+  if (!secret || given !== secret) return json({ error: 'Non autorisé' }, 401)
   try {
     const b = await req.json()
-    const atts: { name?: string; contentType?: string; contentBytes?: string }[] = Array.isArray(b.attachments) ? b.attachments : []
+    let atts: { name?: string; contentType?: string; contentBytes?: string }[] = Array.isArray(b.attachments) ? b.attachments : []
+    if (b.type === 'email.received') {
+      // webhook Resend : seules les métadonnées sont fournies, on télécharge les images
+      const subj = String(b.data?.subject || '')
+      if (!/pr[ée]paration du jour/i.test(subj)) return json({ ignored: 'objet sans rapport', subject: subj })
+      const key = Deno.env.get('RESEND_API_KEY') || ''
+      const lr = await fetch(`https://api.resend.com/emails/receiving/${b.data.email_id}/attachments`, { headers: { Authorization: `Bearer ${key}` } })
+      if (!lr.ok) return json({ error: 'Pièces jointes Resend illisibles', detail: (await lr.text()).slice(0, 300) }, 502)
+      const lj = await lr.json()
+      const list: { filename?: string; content_type?: string; download_url?: string }[] = Array.isArray(lj) ? lj : (lj.data?.data || lj.data || [])
+      atts = []
+      for (const a of list) {
+        if (!/^image\//i.test(a.content_type || '') || !a.download_url) continue
+        const fr = await fetch(a.download_url); if (!fr.ok) continue
+        const buf = new Uint8Array(await fr.arrayBuffer()); let bin = ''
+        for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000))
+        atts.push({ name: a.filename, contentType: a.content_type, contentBytes: btoa(bin) })
+      }
+      b.subject = subj
+    }
     // le tableau est la plus grosse image (les logos et icônes de signature sont petits)
     const imgs = atts.filter(a => /^image\/(png|jpe?g|webp|gif)/i.test(a.contentType || '') && a.contentBytes)
       .sort((x, y) => (y.contentBytes!.length) - (x.contentBytes!.length))
