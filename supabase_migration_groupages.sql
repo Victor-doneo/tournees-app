@@ -13,7 +13,7 @@ create table if not exists public.groupages (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   -- numéro de réception = groupage + JJMM de la date de chargement
-  numero_reception text generated always as (groupage || to_char(date_chargement, 'DDMM')) stored,
+  numero_reception text generated always as (groupage || lpad(extract(day from date_chargement)::int::text, 2, '0') || lpad(extract(month from date_chargement)::int::text, 2, '0')) stored,
   unique (groupage, date_chargement)
 );
 create index if not exists groupages_date_idx on public.groupages (date_chargement);
