@@ -4,15 +4,9 @@
 -- Les partenaires s'appellent CCHEZVOUS dans l'interface (la valeur interne reste 'partner').
 -- ═══════════════════════════════════════════════════════════════════════════════
 
--- 1) Rôle « carrier » autorisé + fournisseurs rattachés
-do $$
-declare c record;
-begin
-  for c in select conname from pg_constraint
-           where conrelid = 'public.users'::regclass and contype = 'c' and pg_get_constraintdef(oid) ilike '%role%'
-  loop execute format('alter table public.users drop constraint %I', c.conname); end loop;
-  alter table public.users add constraint users_role_check check (role in ('admin', 'operator', 'partner', 'carrier'));
-end $$;
+-- 1) Rôle « carrier » : la colonne role est de type enum (user_role), la valeur doit être ajoutée AVANT, séparément :
+--      alter type public.user_role add value if not exists 'carrier';
+--    (à lancer seul, dans une exécution à part, puis lancer ce fichier)
 alter table public.users add column if not exists suppliers text[] not null default '{}';
 
 -- 2) Fonctions d'accès : un compte inactif n'a plus aucun accès
@@ -71,9 +65,9 @@ returns trigger language plpgsql security definer set search_path = public as $$
 declare ch text[] := '{}'; actor_mail text;
 begin
   if tg_op = 'INSERT' then
-    ch := array['création (' || coalesce(new.role, '?') || ')'];
+    ch := array['création (' || coalesce(new.role::text, '?') || ')'];
   else
-    if new.role is distinct from old.role then ch := ch || ('rôle ' || old.role || ' → ' || new.role); end if;
+    if new.role is distinct from old.role then ch := ch || ('rôle ' || old.role::text || ' → ' || new.role::text); end if;
     if new.active is distinct from old.active then ch := ch || (case when new.active then 'compte activé' else 'compte désactivé' end); end if;
     if new.suppliers is distinct from old.suppliers then ch := ch || ('fournisseurs : ' || coalesce(array_to_string(new.suppliers, ', '), '')); end if;
     if new.can_view_tour_tracking is distinct from old.can_view_tour_tracking then ch := ch || ('suivi des tournées : ' || case when new.can_view_tour_tracking then 'accordé' else 'retiré' end); end if;
