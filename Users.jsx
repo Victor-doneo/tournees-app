@@ -5,14 +5,14 @@ import { Plus, X, KeyRound, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const ROLE_LABELS = { admin: 'Administrateur', operator: 'Opérateur', partner: 'CCHEZVOUS', carrier: 'Transporteur' }
-const EMPTY_FORM = { email: '', full_name: '', role: 'operator', password: '', suppliers: [], can_view_tour_tracking: false, can_manage_loading_plan: false }
+const EMPTY_FORM = { email: '', full_name: '', role: 'operator', password: '', suppliers: [], can_view_tour_tracking: false, can_manage_loading_plan: false, can_manage_carriers: false }
 
-export default function Users() {
+export default function Users({ carriersOnly = false }) {
   const { profile } = useAuth()
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState(EMPTY_FORM)
+  const [form, setForm] = useState(carriersOnly ? { ...EMPTY_FORM, role: 'carrier' } : EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [allSuppliers, setAllSuppliers] = useState([])
   const [audit, setAudit] = useState([])
@@ -22,7 +22,9 @@ export default function Users() {
   useEffect(() => { fetchUsers(); fetchSuppliers(); fetchAudit() }, [])
 
   async function fetchUsers() {
-    const { data } = await supabase.from('users').select('*').order('created_at', { ascending: false })
+    let q = supabase.from('users').select('*').order('created_at', { ascending: false })
+    if (carriersOnly) q = q.eq('role', 'carrier')
+    const { data } = await q
     setUsers(data || [])
     setLoading(false)
   }
@@ -67,7 +69,7 @@ export default function Users() {
         if (ue) await supabase.from('users').upsert({ id: data.user.id, email: form.email, active: true, ...patch })
         toast('Compte créé avec l\'ancienne méthode : déploie la fonction admin-users pour sécuriser la création', { icon: '⚠️' })
       } else toast.success('Utilisateur créé avec succès')
-      setShowModal(false); setForm(EMPTY_FORM)
+      setShowModal(false); setForm(carriersOnly ? { ...EMPTY_FORM, role: 'carrier' } : EMPTY_FORM)
       fetchUsers(); fetchAudit()
     } catch (err) {
       toast.error('Erreur : ' + err.message)
@@ -75,7 +77,10 @@ export default function Users() {
   }
 
   async function patchUser(u, patch, okMsg) {
-    const { error } = await supabase.from('users').update(patch).eq('id', u.id)
+    let error = null
+    if (carriersOnly) { // gestionnaire de comptes transporteurs : passe par la fonction serveur (périmètre limité aux transporteurs)
+      try { const out = await callAdmin({ action: 'update_carrier', user_id: u.id, ...patch }); if (out === null) error = { message: 'fonction admin-users non déployée' } } catch (e) { error = e }
+    } else ({ error } = await supabase.from('users').update(patch).eq('id', u.id))
     if (error) return toast.error('Erreur : ' + error.message)
     toast.success(okMsg)
     fetchUsers(); fetchAudit()
@@ -83,6 +88,7 @@ export default function Users() {
   const toggleActive = u => patchUser(u, { active: !u.active }, u.active ? 'Utilisateur désactivé' : 'Utilisateur activé')
   const toggleLoadingPlan = u => patchUser(u, { can_manage_loading_plan: !u.can_manage_loading_plan }, u.can_manage_loading_plan ? 'Accès au plan de chargement retiré' : 'Accès au plan de chargement accordé')
   const toggleTracking = u => patchUser(u, { can_view_tour_tracking: !u.can_view_tour_tracking }, u.can_view_tour_tracking ? 'Accès au suivi des tournées retiré' : 'Accès au suivi des tournées accordé')
+  const toggleCarriers = u => patchUser(u, { can_manage_carriers: !u.can_manage_carriers }, u.can_manage_carriers ? 'Gestion des comptes transporteurs retirée' : 'Gestion des comptes transporteurs accordée')
   const updateRole = (u, role) => patchUser(u, { role }, 'Rôle mis à jour')
 
   async function saveSuppliers() {
@@ -124,10 +130,10 @@ export default function Users() {
       <div className="page-header">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="page-title">Utilisateurs</h2>
-            <p className="page-subtitle">{users.length} comptes · Administrateur, Opérateur, CCHEZVOUS (partenaire) et Transporteur (accès limité à ses données qualité)</p>
+            <h2 className="page-title">{carriersOnly ? 'Comptes transporteurs' : 'Utilisateurs'}</h2>
+            <p className="page-subtitle">{users.length} comptes{carriersOnly ? ' · accès des transporteurs à leurs données qualité' : ' · Administrateur, Opérateur, CCHEZVOUS (partenaire) et Transporteur (accès limité à ses données qualité)'}</p>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={15} /> Nouvel utilisateur</button>
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={15} /> {carriersOnly ? 'Nouveau compte transporteur' : 'Nouvel utilisateur'}</button>
         </div>
       </div>
 
@@ -154,16 +160,17 @@ export default function Users() {
                       </td>
                       <td style={{ color: 'var(--gray-500)' }}>{u.email}</td>
                       <td>
-                        <select value={u.role} onChange={e => updateRole(u, e.target.value)} disabled={u.id === profile?.id} aria-label={`Rôle de ${u.email}`}
+                        {carriersOnly ? ROLE_LABELS[u.role] : <select value={u.role} onChange={e => updateRole(u, e.target.value)} disabled={u.id === profile?.id} aria-label={`Rôle de ${u.email}`}
                           style={{ border: '1px solid var(--gray-200)', borderRadius: '6px', padding: '4px 8px', fontSize: '13px', background: 'white', color: 'var(--gray-700)', cursor: 'pointer' }}>
                           {roleOptions}
-                        </select>
+                        </select>}
                       </td>
                       <td style={{ fontSize: 13 }}>
                         {u.role === 'partner' && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                             <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}><input type="checkbox" checked={!!u.can_manage_loading_plan} onChange={() => toggleLoadingPlan(u)} /> Plan de chargement</label>
                             <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}><input type="checkbox" checked={!!u.can_view_tour_tracking} onChange={() => toggleTracking(u)} /> Suivi, Dashboard Transport, colis non rapatriés</label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}><input type="checkbox" checked={!!u.can_manage_carriers} onChange={() => toggleCarriers(u)} /> Gérer les comptes transporteurs</label>
                           </div>
                         )}
                         {u.role === 'carrier' && (
@@ -224,12 +231,13 @@ export default function Users() {
                   <input className="form-input" type="email" required value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@exemple.com" /></div>
                 <div className="form-group"><label className="form-label">Mot de passe temporaire</label>
                   <input className="form-input" type="password" required minLength={8} value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="8 caractères minimum" /></div>
-                <div className="form-group"><label className="form-label">Rôle</label>
-                  <select className="form-input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>{roleOptions}</select></div>
+                {!carriersOnly && <div className="form-group"><label className="form-label">Rôle</label>
+                  <select className="form-input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>{roleOptions}</select></div>}
                 {form.role === 'partner' && (
                   <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
                     <label style={{ display: 'flex', gap: 8, cursor: 'pointer' }}><input type="checkbox" checked={form.can_manage_loading_plan} onChange={e => setForm(f => ({ ...f, can_manage_loading_plan: e.target.checked }))} /> Plan de chargement</label>
                     <label style={{ display: 'flex', gap: 8, cursor: 'pointer' }}><input type="checkbox" checked={form.can_view_tour_tracking} onChange={e => setForm(f => ({ ...f, can_view_tour_tracking: e.target.checked }))} /> Suivi des tournées, Dashboard Transport, colis non rapatriés</label>
+                    <label style={{ display: 'flex', gap: 8, cursor: 'pointer' }}><input type="checkbox" checked={form.can_manage_carriers} onChange={e => setForm(f => ({ ...f, can_manage_carriers: e.target.checked }))} /> Gérer les comptes transporteurs</label>
                   </div>
                 )}
                 {form.role === 'carrier' && (

@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useDemandeNotifications } from './demandeNotifications'
-import { LogOut, ClipboardList, AlertTriangle, LayoutGrid, Mail, Activity, Search, Bell, BarChart3, PackageX } from 'lucide-react'
+import { LogOut, ClipboardList, AlertTriangle, LayoutGrid, Mail, Activity, Search, Bell, BarChart3, PackageX, Users } from 'lucide-react'
 
 export default function PartnerLayout() {
   const { profile, signOut } = useAuth()
@@ -80,9 +80,18 @@ export default function PartnerLayout() {
             <Search size={16} />
             Recherche BP
           </NavLink>
-          {profile?.can_manage_loading_plan && (
+          {profile?.can_manage_carriers && (
             <>
               <span className="sidebar-section-label" style={{ marginTop: 8 }}>Administratif</span>
+              <NavLink to="/partner/comptes-transporteurs" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+                <Users size={16} />
+                Comptes transporteurs
+              </NavLink>
+            </>
+          )}
+          {profile?.can_manage_loading_plan && (
+            <>
+              {!profile?.can_manage_carriers && <span className="sidebar-section-label" style={{ marginTop: 8 }}>Administratif</span>}
               <NavLink to="/partner/destinataires-plan" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
                 <Mail size={16} />
                 Gestion mailing
@@ -94,7 +103,7 @@ export default function PartnerLayout() {
         <div className="sidebar-footer">
           <div className="user-card">
             <div className="user-avatar">{initials}</div>
-            <div className="user-info">
+            <div className="user-info" role="link" tabIndex={0} title="Mon compte (mot de passe, double authentification)" style={{ cursor: 'pointer' }} onClick={() => navigate('/partner/compte')} onKeyDown={e => { if (e.key === 'Enter') navigate('/partner/compte') }}>
               <div className="user-name">{profile?.full_name || profile?.email}</div>
               <div className="user-role">Partenaire</div>
             </div>

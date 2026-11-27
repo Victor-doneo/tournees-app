@@ -62,7 +62,7 @@ export default function OperatorLayout() {
         <div className="sidebar-footer">
           <div className="user-card">
             <div className="user-avatar">{initials}</div>
-            <div className="user-info">
+            <div className="user-info" role="link" tabIndex={0} title="Mon compte (mot de passe, double authentification)" style={{ cursor: 'pointer' }} onClick={() => navigate('/operator/compte')} onKeyDown={e => { if (e.key === 'Enter') navigate('/operator/compte') }}>
               <div className="user-name">{profile?.full_name || profile?.email}</div>
               <div className="user-role">Opérateur</div>
             </div>

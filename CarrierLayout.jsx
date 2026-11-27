@@ -25,7 +25,7 @@ export default function CarrierLayout() {
         <div className="sidebar-footer">
           <div className="user-card">
             <div className="user-avatar">{initials}</div>
-            <div className="user-info">
+            <div className="user-info" role="link" tabIndex={0} title="Mon compte (mot de passe, double authentification)" style={{ cursor: 'pointer' }} onClick={() => navigate('/carrier/compte')} onKeyDown={e => { if (e.key === 'Enter') navigate('/carrier/compte') }}>
               <div className="user-name">{profile?.full_name || profile?.email}</div>
               <div className="user-role">Transporteur</div>
             </div>

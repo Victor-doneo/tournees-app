@@ -7,6 +7,8 @@ import Dashboard from './Dashboard'
 import DashboardTransport from './DashboardTransport'
 import ColisNonRapatries from './ColisNonRapatries'
 import CarrierLayout from './CarrierLayout'
+import AccountSettings from './AccountSettings'
+import MfaGate from './MfaGate'
 import Tours from './Tours'
 import Users from './Users'
 import SearchParcel from './SearchParcel'
@@ -43,6 +45,11 @@ function LoadingPlanRoute({ children }) {
   return profile?.can_manage_loading_plan ? children : <Navigate to="/partner" replace />
 }
 
+function CarrierManagerRoute({ children }) {
+  const { profile } = useAuth()
+  return profile?.can_manage_carriers ? children : <Navigate to="/partner" replace />
+}
+
 function TrackingRoute({ children }) {
   const { profile } = useAuth()
   return profile?.can_view_tour_tracking ? children : <Navigate to="/partner" replace />
@@ -73,7 +80,7 @@ function PrivateRoute({ children, roles }) {
   if (!user) return <Navigate to="/login" replace />
   if (profile && profile.active === false) return <InactiveAccount />
   if (roles && !roles.includes(profile?.role)) return <Navigate to={homeForRole(profile?.role)} replace />
-  return children
+  return <MfaGate>{children}</MfaGate>
 }
 
 export default function App() {
@@ -95,6 +102,7 @@ export default function App() {
         <Route path="tours" element={<Tours />} />
         <Route path="upload" element={<UploadPDF />} />
         <Route path="users" element={<Users />} />
+        <Route path="compte" element={<AccountSettings />} />
         <Route path="search-parcel" element={<SearchParcel />} />
         <Route path="search-tours" element={<SearchTours />} />
         <Route path="inventaire" element={<Inventaire />} />
@@ -111,9 +119,12 @@ export default function App() {
         <Route path="plan-chargement" element={<PlanChargement />} />
         <Route path="colis-retour" element={<Navigate to="/admin/suivi-tournees" replace />} />
         <Route path="demandes" element={<Demandes />} />
+        <Route path="compte" element={<AccountSettings />} />
+        <Route path="comptes-transporteurs" element={<CarrierManagerRoute><Users carriersOnly /></CarrierManagerRoute>} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="defaillances" element={<Defaillances />} />
         <Route path="scan/:tourId" element={<ScanPage />} />
+        <Route path="compte" element={<AccountSettings />} />
       </Route>
 
       {/* Operator routes */}
@@ -140,6 +151,7 @@ export default function App() {
       {/* Transporteur : sa qualité et ses colis non rapatriés (données filtrées côté base) */}
       <Route path="/carrier" element={<PrivateRoute roles={['carrier']}><CarrierLayout /></PrivateRoute>}>
         <Route index element={<DashboardTransport carrier />} />
+        <Route path="compte" element={<AccountSettings />} />
         <Route path="colis-non-rapatries" element={<ColisNonRapatries />} />
       </Route>
 
