@@ -5,7 +5,7 @@ import { Plus, X, KeyRound, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const ROLE_LABELS = { admin: 'Administrateur', operator: 'Opérateur', partner: 'CCHEZVOUS', carrier: 'Transporteur' }
-const EMPTY_FORM = { email: '', full_name: '', role: 'operator', password: '', suppliers: [], can_view_tour_tracking: false, can_manage_loading_plan: false, can_manage_carriers: false }
+const EMPTY_FORM = { email: '', full_name: '', role: 'operator', password: '', suppliers: [], can_view_tour_tracking: false, can_manage_loading_plan: false, can_manage_carriers: false, mfa_required: false }
 
 export default function Users({ carriersOnly = false }) {
   const { profile } = useAuth()
@@ -89,6 +89,7 @@ export default function Users({ carriersOnly = false }) {
   const toggleLoadingPlan = u => patchUser(u, { can_manage_loading_plan: !u.can_manage_loading_plan }, u.can_manage_loading_plan ? 'Accès au plan de chargement retiré' : 'Accès au plan de chargement accordé')
   const toggleTracking = u => patchUser(u, { can_view_tour_tracking: !u.can_view_tour_tracking }, u.can_view_tour_tracking ? 'Accès au suivi des tournées retiré' : 'Accès au suivi des tournées accordé')
   const toggleCarriers = u => patchUser(u, { can_manage_carriers: !u.can_manage_carriers }, u.can_manage_carriers ? 'Gestion des comptes transporteurs retirée' : 'Gestion des comptes transporteurs accordée')
+  const toggleMfa = u => patchUser(u, { mfa_required: !u.mfa_required }, u.mfa_required ? 'Double authentification non exigée' : 'Double authentification exigée à la prochaine connexion')
   const updateRole = (u, role) => patchUser(u, { role }, 'Rôle mis à jour')
 
   async function saveSuppliers() {
@@ -144,7 +145,7 @@ export default function Users({ carriersOnly = false }) {
               <table>
                 <thead>
                   <tr>
-                    <th>Nom</th><th>Email</th><th>Rôle</th><th>Accès</th><th>Statut</th><th>Créé le</th><th></th>
+                    <th>Nom</th><th>Email</th><th>Rôle</th><th>Accès</th>{!carriersOnly && <th>2FA exigée</th>}<th>Statut</th><th>Créé le</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -182,6 +183,7 @@ export default function Users({ carriersOnly = false }) {
                         {u.role === 'admin' && <span style={{ color: 'var(--gray-400)' }}>Tout</span>}
                         {u.role === 'operator' && <span style={{ color: 'var(--gray-300)' }}>—</span>}
                       </td>
+                      {!carriersOnly && <td><label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}><input type="checkbox" checked={!!u.mfa_required} onChange={() => toggleMfa(u)} aria-label={`Double authentification exigée pour ${u.email}`} /> Exigée</label></td>}
                       <td><span className={`badge ${u.active ? 'badge-green' : 'badge-gray'}`}>{u.active ? 'Actif' : 'Inactif'}</span></td>
                       <td style={{ color: 'var(--gray-400)', fontSize: '13px' }}>{new Date(u.created_at).toLocaleDateString('fr-FR')}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>
@@ -240,6 +242,7 @@ export default function Users({ carriersOnly = false }) {
                     <label style={{ display: 'flex', gap: 8, cursor: 'pointer' }}><input type="checkbox" checked={form.can_manage_carriers} onChange={e => setForm(f => ({ ...f, can_manage_carriers: e.target.checked }))} /> Gérer les comptes transporteurs</label>
                   </div>
                 )}
+                {!carriersOnly && <label style={{ display: 'flex', gap: 8, cursor: 'pointer', fontSize: 13, marginBottom: 12 }}><input type="checkbox" checked={form.mfa_required} onChange={e => setForm(f => ({ ...f, mfa_required: e.target.checked }))} /> Exiger la double authentification pour ce compte</label>}
                 {form.role === 'carrier' && (
                   <div className="form-group"><label className="form-label">Fournisseurs visibles (ses données uniquement)</label>
                     <SupList value={form.suppliers} onChange={v => setForm(f => ({ ...f, suppliers: v }))} /></div>

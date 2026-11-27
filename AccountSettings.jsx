@@ -72,8 +72,8 @@ export default function AccountSettings() {
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Modification…' : 'Modifier le mot de passe'}</button>
         </form>
 
-        <div className="card" style={{ padding: 20 }}>
-          <h3 style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}><ShieldCheck size={16} /> Double authentification</h3>
+        {(profile?.mfa_required || factors.length > 0) && <div className="card" style={{ padding: 20 }}>
+          <h3 style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}><ShieldCheck size={16} /> Double authentification{profile?.mfa_required ? ' (exigée pour ton compte)' : ''}</h3>
           <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 12 }}>Un code à 6 chiffres, généré par une application (Google Authenticator, Microsoft Authenticator, 1Password…), est demandé à chaque connexion.</p>
           {factors.length > 0 && !enroll && (
             <div>
@@ -81,7 +81,7 @@ export default function AccountSettings() {
               {factors.map(f => (
                 <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: '1px solid var(--gray-100, #f3f4f6)' }}>
                   <span style={{ fontSize: 13 }}>{f.friendly_name || 'Application d\'authentification'} · ajoutée le {new Date(f.created_at).toLocaleDateString('fr-FR')}</span>
-                  <button className="btn btn-secondary btn-sm" onClick={() => disable(f)}>Désactiver</button>
+                  {!profile?.mfa_required && <button className="btn btn-secondary btn-sm" onClick={() => disable(f)}>Désactiver</button>}
                 </div>
               ))}
             </div>
@@ -100,7 +100,7 @@ export default function AccountSettings() {
               </div>
             </form>
           )}
-        </div>
+        </div>}
       </div>
     </>
   )

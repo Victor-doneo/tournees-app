@@ -48,6 +48,7 @@ Deno.serve(async (req) => {
         can_view_tour_tracking: isAdmin && role === 'partner' ? !!b.can_view_tour_tracking : false,
         can_manage_loading_plan: isAdmin && role === 'partner' ? !!b.can_manage_loading_plan : false,
         can_manage_carriers: isAdmin && role === 'partner' ? !!b.can_manage_carriers : false,
+        mfa_required: isAdmin ? !!b.mfa_required : false,
       }
       const { error: ue } = await admin.from('users').upsert(row, { onConflict: 'id' })
       if (ue) return json({ error: 'Compte créé mais profil non enregistré : ' + ue.message }, 500)
