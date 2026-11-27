@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import { useSearchParams } from 'react-router-dom'
-import { PackageX, Download } from 'lucide-react'
+import { PackageX, Download, RefreshCw } from 'lucide-react'
+import { useAuth } from './AuthContext'
 
 const FROM = '2026-11-16' // début du suivi
 const EXCLUDED_RECV = ['receptionne', 'livre'] // déjà réceptionné dans REFLEX / livré : pas à rapatrier
@@ -26,6 +27,9 @@ export default function ColisNonRapatries() {
   const [tours, setTours] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const { profile } = useAuth()
+  const [recheckMsg, setRecheckMsg] = useState('')
+  const [rechecking, setRechecking] = useState(false)
   const [params] = useSearchParams()
   const [supplier, setSupplier] = useState(params.get('supplier') || '')
   const [q, setQ] = useState('')
@@ -67,6 +71,13 @@ export default function ColisNonRapatries() {
     return [...g.values()]
   }, [shown])
 
+  async function recheck() {
+    if (!shown.length) return
+    setRechecking(true); setRecheckMsg('')
+    const { data, error: e } = await supabase.rpc('request_reflex_recheck', { p_ids: shown.map(l => l.id) })
+    setRechecking(false)
+    setRecheckMsg(e ? `Erreur : ${e.message} (migration supabase_migration_reflex_recheck.sql lancée ?)` : `${data ?? shown.length} colis mis en file : REFLEX les revérifie au prochain passage (toutes les 5 min, ~25 BP par passage). Recharge la page dans quelques minutes.`)
+  }
   function exportCsv() {
     const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
     const csv = ['Date;Tournée;Fournisseur;BP;Motif;Jours', ...shown.map(r => [fr(r.task_date), r.tour_code || r.round_name || '', r.supplier, r.barcode, r.reason || '', r.age].map(esc).join(';'))].join('\n')
@@ -98,7 +109,9 @@ export default function ColisNonRapatries() {
           </select>
           <input className="form-input" style={{ width: 220 }} placeholder="Rechercher BP, tournée…" value={q} onChange={e => setQ(e.target.value)} aria-label="Rechercher" />
           <button type="button" className="btn btn-secondary" onClick={exportCsv} disabled={!shown.length}><Download size={14} /> Exporter CSV</button>
+          {profile?.role !== 'carrier' && <button type="button" className="btn btn-secondary" onClick={recheck} disabled={!shown.length || rechecking}><RefreshCw size={14} /> {rechecking ? 'Envoi…' : 'Revérifier dans REFLEX'}</button>}
         </div>
+        {recheckMsg && <div className="card" style={{ padding: 10, marginBottom: 10, fontSize: 13 }}>{recheckMsg}</div>}
         {loading ? <div className="card" style={{ padding: 24, textAlign: 'center' }}>Chargement…</div>
           : !groups.length ? <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--gray-400)' }}>Aucun colis non rapatrié</div>
           : groups.map(g => (

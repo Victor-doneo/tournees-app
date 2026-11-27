@@ -48,7 +48,7 @@ const lateGroups = new Map()
 // Contrôle REFLEX de TOUS les colis non rapatriés (jours passés depuis le 16/11), quel que soit leur âge. Le statut est enregistré, puis :
 //  - colis réceptionné dans REFLEX mais pas dans Superflash -> demande à DONEO (quel que soit l'âge, une seule par colis)
 //  - colis non réceptionné -> demande « Vérifier que le colis n'est pas revenu » seulement au-delà de OVERDUE_DAYS jours
-// CHECK_LIMIT=n : nombre de BP par passage (25 par défaut) ; les BP contrôlés depuis moins de 6 h sont sautés, donc on peut relancer jusqu'à épuisement.
+// CHECK_LIMIT=n : nombre de BP par passage (25 par défaut) ; les BP contrôlés depuis moins de 2 h sont sautés, donc on peut relancer jusqu'à épuisement.
 const CHECK_ALL = !process.env.NO_CHECK_ALL // contrôle de tous les colis non rapatriés des jours passés (NO_CHECK_ALL=1 : ancien comportement, seulement > OVERDUE_DAYS jours)
 const CHECK_LIMIT = Number(process.env.CHECK_LIMIT) || 25
 const todayParis = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date())
@@ -60,8 +60,8 @@ const limit = addDays(todayParis, -OVERDUE_DAYS)
   const { data: late, error: le } = await qy.or('reflex_recv_status.is.null,reflex_recv_status.neq.livre').limit(CHECK_ALL ? 3000 : 500)
   if (le) console.log('Demandes de retard ignorées (migration supabase_migration_reflex_verification.sql lancée ?) :', le.message)
   else for (const l of late || []) {
-    // contrôlé depuis moins de 6 h : sauté, sauf s'il est déjà vu « réceptionné » (sa demande à DONEO n'est peut-être pas encore créée, sans nouvelle recherche REFLEX)
-    if (CHECK_ALL && l.reflex_recv_status !== 'receptionne' && l.reflex_recv_checked_at && Date.now() - Date.parse(l.reflex_recv_checked_at) < 6 * 3600e3) continue
+    // contrôlé depuis moins de 2 h : sauté, sauf s'il est déjà vu « réceptionné » (sa demande à DONEO n'est peut-être pas encore créée, sans nouvelle recherche REFLEX)
+    if (CHECK_ALL && l.reflex_recv_status !== 'receptionne' && l.reflex_recv_checked_at && Date.now() - Date.parse(l.reflex_recv_checked_at) < 2 * 3600e3) continue
     const bp = /contre reprise/i.test(l.reason || '') ? String(l.barcode).replace(/^7/, '').trim() : String(l.barcode).trim()
     if (!lateGroups.has(bp)) lateGroups.set(bp, [])
     lateGroups.get(bp).push(l)
