@@ -32,10 +32,10 @@ export const STATUS_META = {
   cloturee: { label: 'Clôturée', badge: 'badge-gray' },
 }
 
-// Affectation : DONEO (interne, bleu) ou Partenaire (rose)
+// Affectation : DONEO (interne, bleu) ou CCHEZVOUS (partenaire, rose)
 export const ASSIGN_META = {
   doneo: { label: 'DONEO', bg: '#dbeafe', color: '#1e40af' },
-  partenaire: { label: 'Partenaire', bg: '#fce7f3', color: '#9d174d' },
+  partenaire: { label: 'CCHEZVOUS', bg: '#fce7f3', color: '#9d174d' },
 }
 export function AssignBadge({ value }) {
   const m = ASSIGN_META[value] || ASSIGN_META.doneo
@@ -454,7 +454,7 @@ function CreateDemandeModal({ onClose, onCreated }) {
               <label className="form-label">Affecter à</label>
               <select className="form-input" value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
                 <option value="doneo">DONEO</option>
-                <option value="partenaire">Partenaire</option>
+                <option value="partenaire">CCHEZVOUS</option>
               </select>
             </div>
 
@@ -680,7 +680,7 @@ function DemandeDetailModal({ demande, basePath, canValidate, canLinkToSearch, o
               <label className="form-label" style={{ margin: 0 }}>Affectée à</label>
               <select className="form-input" style={{ width: 'auto' }} value={assigned} onChange={e => changeAssign(e.target.value)}>
                 <option value="doneo">DONEO</option>
-                <option value="partenaire">Partenaire</option>
+                <option value="partenaire">CCHEZVOUS</option>
               </select>
             </div>
           )}
