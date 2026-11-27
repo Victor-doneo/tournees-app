@@ -1,7 +1,7 @@
 // Fonction Edge : réception du mail quotidien « Préparation du jour » (tableau collé en IMAGE).
 // Deux façons de l'appeler :
 //  1) Resend « réception d'e-mails » (le mail est transféré à l'adresse de réception Resend) : webhook email.received, URL de la forme
-//     .../functions/v1/groupages-inbound?s=<INGEST_SECRET> ; la fonction récupère les pièces jointes via l'API Resend (secret RESEND_API_KEY).
+//     .../functions/v1/groupages-inbound?s=<INGEST_SECRET> ; la fonction récupère les pièces jointes via l'API Resend (secret RESEND_RECEIVE_KEY, clé Resend « Full access » ; à défaut RESEND_API_KEY).
 //  2) Power Automate (POST JSON) avec l'en-tête  x-ingest-secret: <INGEST_SECRET>.
 //     Corps : { subject, receivedDateTime, attachments: [{ name, contentType, contentBytes(base64) }] }
 // L'image du tableau est lue par Claude (vision) -> lignes { groupage, transporteur, date_chargement, poids } -> table groupages
@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
       // webhook Resend : seules les métadonnées sont fournies, on télécharge les images
       const subj = String(b.data?.subject || '')
       if (!/pr[ée]paration du jour/i.test(subj)) return json({ ignored: 'objet sans rapport', subject: subj })
-      const key = Deno.env.get('RESEND_API_KEY') || ''
+      const key = Deno.env.get('RESEND_RECEIVE_KEY') || Deno.env.get('RESEND_API_KEY') || '' // clé « Full access » nécessaire pour lire les mails reçus
       const lr = await fetch(`https://api.resend.com/emails/receiving/${b.data.email_id}/attachments`, { headers: { Authorization: `Bearer ${key}` } })
       if (!lr.ok) return json({ error: 'Pièces jointes Resend illisibles', detail: (await lr.text()).slice(0, 300) }, 502)
       const lj = await lr.json()
