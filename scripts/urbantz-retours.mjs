@@ -271,6 +271,9 @@ const delivered = new Set()
 for (const t of tasks.values()) for (const it of t.items || []) if (it.barcode && it.status === 'DELIVERED') delivered.add(String(it.barcode).trim())
 let recovered = 0
 let lcrCount = 0
+// Tâche de collecte en échec (statut NOT_PICKED_UP) : le colis n'a pas été récupéré, il n'y a rien à rapatrier, même si l'item est passé « collecté » avant l'échec
+const failedCollect = new Set()
+for (const t of tasks.values()) if (/^NOT_PICKED_UP/.test(t.status || '')) failedCollect.add(String(t.taskId || t.id))
 for (const t of tasks.values()) {
   for (const it of t.items || []) {
     stat[it.status] = (stat[it.status] || 0) + 1
@@ -278,7 +281,7 @@ for (const t of tasks.values()) {
     let reason = null, outCode = it.barcode
     const bc = String(it.barcode).trim()
     if (it.status === 'NOT_DELIVERED') { if (delivered.has(bc)) { recovered++; continue } reason = 'Livraison impossible' }
-    else if (/PICKED_UP/.test(it.status || '') && !/^NOT_/.test(it.status)) reason = isDea(it) ? null : (it.status === 'PICKED_UP' ? 'Collecté' : 'Partiellement collecté')
+    else if (/PICKED_UP/.test(it.status || '') && !/^NOT_/.test(it.status) && !failedCollect.has(String(t.taskId || t.id))) reason = isDea(it) ? null : (it.status === 'PICKED_UP' ? 'Collecté' : 'Partiellement collecté')
     // Livraison contre reprise livrée : elle doit apparaître en « collecté » sous le numéro 7 + numéro du colis livré
     if (!reason && it.status === 'DELIVERED' && lcr.has(bc) && !isDea(it)) { reason = 'Collecté (livraison contre reprise)'; outCode = '7' + bc; lcrCount++ }
     if (!reason) continue
@@ -320,9 +323,18 @@ const resolveLabels = async (d, notDelivered) => {
   if (keep.length) { const { error: ke } = await sb.from('return_labels').update({ reflex_recv_status: 'livre', reflex_recv_checked_at: new Date().toISOString(), reflex_recv_line: 'Livré (Urbantz)' }).in('id', keep); if (ke) throw ke }
   console.log(`${d} : ${del.length} étiquette(s) supprimée(s), ${keep.length} accusée(s) marquée(s) « livré » (colis qui n'apparaissent plus parmi les non livrés)`)
 }
+// Étiquettes « collecté » déjà créées pour une collecte devenue en échec : supprimées (sauf si déjà accusées de réception)
+const purgeFailedCollect = async () => {
+  if (!failedCollect.size) return
+  const { data: labs } = await sb.from('return_labels').select('id, barcode, received_at').eq('task_date', day).in('reason', ['Collecté', 'Partiellement collecté']).in('task_id', [...failedCollect])
+  const del = (labs || []).filter(r => !r.received_at)
+  console.log(`${day} : ${failedCollect.size} collecte(s) en échec ; ${del.length} étiquette(s) ${DRY_RUN ? 'seraient supprimée(s)' : 'supprimée(s)'}${del.length ? ' : ' + del.map(r => r.barcode).join(', ') : ''}`)
+  if (!DRY_RUN && del.length) { const { error: pe } = await sb.from('return_labels').delete().in('id', del.map(r => r.id)); if (pe) throw pe }
+}
 if (DRY_RUN) {
   if (tasks.size) await resolveLabels(day, new Set([...rows.values()].filter(r => r.reason === 'Livraison impossible').map(r => r.barcode)))
   for (const x of prevDays) await resolveLabels(x.d, x.nd)
+  await purgeFailedCollect()
   console.log('DRY_RUN : rien écrit.'); process.exit(0)
 }
 if (rows.size) {
@@ -336,6 +348,7 @@ if (rows.size) {
 }
 if (tasks.size) await resolveLabels(day, new Set([...rows.values()].filter(r => r.reason === 'Livraison impossible').map(r => r.barcode)))
 for (const x of prevDays) await resolveLabels(x.d, x.nd)
+await purgeFailedCollect()
 // Rattrapage : étiquettes sans tournée reconnue (tournée importée dans l'application après leur lecture) -> on retente le rapprochement
 {
   const { data: orph } = await sb.from('return_labels').select('id, task_date, round_name').is('tour_code', null).not('round_name', 'is', null).gte('task_date', new Date(Date.parse(day + 'T12:00:00Z') - 14 * 864e5).toISOString().slice(0, 10))
